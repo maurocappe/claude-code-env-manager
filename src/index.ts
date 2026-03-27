@@ -9,6 +9,7 @@ import { runDelete } from './commands/delete'
 import { runAuthCreate } from './commands/auth/create'
 import { runAuthList } from './commands/auth/list'
 import { runAuthDelete } from './commands/auth/delete'
+import { runAllow } from './commands/allow'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -227,8 +228,8 @@ const allow = defineCommand({
       required: false,
     },
   },
-  run() {
-    notImplemented('allow')
+  async run({ args }) {
+    await runAllow(args.name as string | undefined, { dir: args.dir as string | undefined })
   },
 })
 
