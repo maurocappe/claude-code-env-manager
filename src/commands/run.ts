@@ -51,14 +51,19 @@ export async function runRun(
   // 3. Check trust for project envs
   if (!isPersonalEnv(resolved.path, cenvHome)) {
     if (!isAllowed(resolved.path, cenvHome)) {
+      const hookDetails = Object.entries(resolved.config.hooks ?? {})
+        .flatMap(([event, hooks]) => hooks.map(h => `    ${event}: ${h.command}`))
+        .join('\n')
+
       log.error(
         `This environment is from the project repository and has not been trusted.\n\n` +
         `  Path: ${resolved.path}\n` +
         `  Plugins: ${resolved.config.plugins?.enable?.length ?? 0}\n` +
         `  Skills: ${resolved.config.skills?.length ?? 0}\n` +
         `  MCP: ${Object.keys(resolved.config.mcp_servers ?? {}).length}\n` +
-        `  Hooks: ${Object.keys(resolved.config.hooks ?? {}).length}\n\n` +
-        `Run ${pc.cyan('cenv allow ' + resolved.config.name)} to trust this environment.`
+        `  Hooks: ${Object.keys(resolved.config.hooks ?? {}).length}\n` +
+        (hookDetails ? `\n  Hook commands:\n${hookDetails}\n` : '') +
+        `\nRun ${pc.cyan('cenv allow ' + resolved.config.name)} to trust this environment.`
       )
       return
     }

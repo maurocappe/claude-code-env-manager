@@ -2,6 +2,7 @@ import { intro, outro, spinner, select, log } from '@clack/prompts'
 import pc from 'picocolors'
 import { CENV_HOME, CACHE_DIR, CLAUDE_INSTALLED_PLUGINS_PATH } from '../constants'
 import { resolveEnv } from '../lib/resolver'
+import { isPersonalEnv, isAllowed } from '../lib/trust'
 import {
   resolvePluginDeps,
   resolveSkillDeps,
@@ -38,6 +39,16 @@ export async function runInstall(
   // 1. Resolve env and load config
   const env = await resolveEnv(envNameOrPath, cenvHome, cwd)
   const { config } = env
+
+  // Trust check for project envs — install runs arbitrary commands
+  if (!isPersonalEnv(env.path, cenvHome) && !isAllowed(env.path, cenvHome)) {
+    log.error(
+      `This environment is from a project repository and has not been trusted.\n` +
+      `Install commands could execute arbitrary code.\n\n` +
+      `Run ${pc.cyan('cenv allow ' + config.name)} first.`
+    )
+    return
+  }
 
   log.info(`Environment: ${pc.cyan(config.name)} (${env.source})`)
 

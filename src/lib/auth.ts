@@ -54,7 +54,7 @@ export async function createAuthProfile(
     profile = { ...profile, keychainEntry: keychainService(name) }
   }
 
-  fs.writeFileSync(profilePath(name, dir), JSON.stringify(profile, null, 2) + '\n', 'utf8')
+  fs.writeFileSync(profilePath(name, dir), JSON.stringify(profile, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 })
 }
 
 /**

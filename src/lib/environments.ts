@@ -1,8 +1,23 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { CENV_HOME } from '../constants'
-import { EnvironmentNotFoundError } from '../errors'
+import { CenvError, EnvironmentNotFoundError } from '../errors'
 import { writeEnvConfig } from './config'
+
+const VALID_NAME_RE = /^[a-zA-Z0-9_-]+$/
+
+/**
+ * Validate that a name is safe for use in file paths.
+ * Prevents path traversal attacks via `../` or absolute paths.
+ * @throws CenvError if the name is invalid
+ */
+export function validateName(name: string): void {
+  if (!name || !VALID_NAME_RE.test(name)) {
+    throw new CenvError(
+      `Invalid name "${name}". Names may only contain letters, digits, hyphens, and underscores.`
+    )
+  }
+}
 
 /**
  * Ensure the ~/.claude-envs/ directory structure exists.
@@ -41,6 +56,7 @@ export function ensureCenvHome(cenvHome: string = CENV_HOME): void {
  * @throws Error if the directory already exists
  */
 export function createEnvDir(name: string, cenvHome: string = CENV_HOME): string {
+  validateName(name)
   const envsDir = path.join(cenvHome, 'envs')
   const envDir = path.join(envsDir, name)
 
@@ -75,6 +91,7 @@ export function createEnvDir(name: string, cenvHome: string = CENV_HOME): string
  * @throws EnvironmentNotFoundError if the directory does not exist
  */
 export function deleteEnvDir(name: string, cenvHome: string = CENV_HOME): void {
+  validateName(name)
   const envsDir = path.join(cenvHome, 'envs')
   const envDir = path.join(envsDir, name)
 

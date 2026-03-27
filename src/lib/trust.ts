@@ -87,7 +87,7 @@ export function allowEnv(envDir: string, cenvHome?: string): void {
   existing.push(entry)
 
   fs.mkdirSync(path.dirname(p), { recursive: true })
-  fs.writeFileSync(p, existing.join('\n') + '\n', 'utf8')
+  fs.writeFileSync(p, existing.join('\n') + '\n', { encoding: 'utf8', mode: 0o600 })
 }
 
 /**

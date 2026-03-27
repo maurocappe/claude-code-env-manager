@@ -17,17 +17,17 @@ export async function createSession(
 ): Promise<SessionFiles> {
   const sessionName = `${config.name}-${process.pid}`
   const dir = path.join(sessionsDir, sessionName)
-  fs.mkdirSync(dir, { recursive: true })
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
 
-  // Generate settings.json
+  // Generate settings.json (restricted permissions — may contain sensitive config)
   const settingsPath = path.join(dir, 'settings.json')
   const settings = buildSettings(config)
-  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8')
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { encoding: 'utf8', mode: 0o600 })
 
-  // Generate mcp.json
+  // Generate mcp.json (restricted permissions — may contain resolved secrets)
   const mcpConfigPath = path.join(dir, 'mcp.json')
   const mcpConfig = await buildMcpConfig(config)
-  fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), 'utf8')
+  fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpConfig, null, 2), { encoding: 'utf8', mode: 0o600 })
 
   // Claude.md path — use the env's own file directly
   const claudeMdPath = path.join(envDir, 'claude.md')
