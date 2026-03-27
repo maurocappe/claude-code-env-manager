@@ -1,0 +1,9 @@
+.swarm/
+node_modules/
+dist/
+cenv
+*.tgz
+.agents/
+.claude/skills/
+skills-lock.json
+

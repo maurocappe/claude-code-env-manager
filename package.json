@@ -1,0 +1,28 @@
+{
+  "name": "claude-code-env-manager",
+  "version": "0.1.0",
+  "description": "Define, compose, share, and launch Claude Code with specific environments",
+  "bin": {
+    "cenv": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "compile": "bun build src/index.ts --compile --outfile cenv",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "oxlint src"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.9.1",
+    "citty": "^0.1.6",
+    "picocolors": "^1.1.1",
+    "semver": "^7.6.3",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "oxlint": "^0.16.7",
+    "typescript": "^5.7.3"
+  }
+}
