@@ -11,6 +11,7 @@ import { runAuthList } from './commands/auth/list'
 import { runAuthDelete } from './commands/auth/delete'
 import { runAllow } from './commands/allow'
 import { runRun } from './commands/run'
+import { runInstall } from './commands/install'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -202,8 +203,8 @@ const install = defineCommand({
       required: true,
     },
   },
-  run() {
-    notImplemented('install')
+  async run({ args }) {
+    await runInstall(args.name)
   },
 })
 
