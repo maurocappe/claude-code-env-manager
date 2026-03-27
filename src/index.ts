@@ -10,6 +10,7 @@ import { runAuthCreate } from './commands/auth/create'
 import { runAuthList } from './commands/auth/list'
 import { runAuthDelete } from './commands/auth/delete'
 import { runAllow } from './commands/allow'
+import { runRun } from './commands/run'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -64,8 +65,19 @@ const run = defineCommand({
       default: false,
     },
   },
-  run() {
-    notImplemented('run')
+  async run({ args }) {
+    // Extract pass-through args: everything in args._ after the positional env name
+    const allExtra = (args._ as string[] | undefined) ?? []
+    const passThrough = args.env ? allExtra.slice(1) : allExtra
+
+    await runRun(
+      args.env as string | undefined,
+      passThrough,
+      {
+        auth: args.auth as string | boolean | undefined,
+        dryRun: args['dry-run'] as boolean,
+      }
+    )
   },
 })
 
