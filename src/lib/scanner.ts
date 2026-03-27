@@ -5,7 +5,7 @@ import {
   CLAUDE_INSTALLED_PLUGINS_PATH,
   CLAUDE_SETTINGS_PATH,
 } from '../constants'
-import type { InstalledPlugin, InstalledSkill } from '../types'
+import type { InstalledPlugin, InstalledSkill, PluginComponents } from '../types'
 
 // ── Installed plugins ──────────────────────────────────────────────────────────
 
@@ -139,6 +139,96 @@ export function scanInstalledSkills(
   }
 
   return results
+}
+
+// ── Plugin components ──────────────────────────────────────────────────────────
+
+/**
+ * Scan the internal components of an installed plugin directory.
+ *
+ * Reads:
+ * - `pluginPath/skills/` → list skill directories (each with SKILL.md)
+ * - `pluginPath/hooks/hooks.json` → parse hook event types
+ * - `pluginPath/.mcp.json` → list MCP server names
+ * - `pluginPath/.claude-plugin/agents/` → list agent directory names
+ *
+ * Missing subdirectories/files return empty arrays for those fields.
+ *
+ * @param pluginPath Absolute path to the installed plugin directory
+ */
+export function scanPluginComponents(pluginPath: string): PluginComponents {
+  const skills: string[] = []
+  const hooks: Record<string, unknown[]> = {}
+  const mcpServers: string[] = []
+  const agents: string[] = []
+
+  // ── Skills ──────────────────────────────────────────────────────────────────
+
+  const skillsDir = path.join(pluginPath, 'skills')
+  if (fs.existsSync(skillsDir)) {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(skillsDir, { withFileTypes: true })
+    } catch {
+      entries = []
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const skillMd = path.join(skillsDir, entry.name, 'SKILL.md')
+      if (fs.existsSync(skillMd)) {
+        skills.push(entry.name)
+      }
+    }
+  }
+
+  // ── Hooks ───────────────────────────────────────────────────────────────────
+
+  const hooksJsonPath = path.join(pluginPath, 'hooks', 'hooks.json')
+  if (fs.existsSync(hooksJsonPath)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(hooksJsonPath, 'utf8'))
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        for (const [hookType, hookList] of Object.entries(raw)) {
+          hooks[hookType] = Array.isArray(hookList) ? hookList : []
+        }
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  // ── MCP servers ─────────────────────────────────────────────────────────────
+
+  const mcpJsonPath = path.join(pluginPath, '.mcp.json')
+  if (fs.existsSync(mcpJsonPath)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(mcpJsonPath, 'utf8'))
+      if (raw?.mcpServers && typeof raw.mcpServers === 'object') {
+        mcpServers.push(...Object.keys(raw.mcpServers))
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  // ── Agents ──────────────────────────────────────────────────────────────────
+
+  const agentsDir = path.join(pluginPath, '.claude-plugin', 'agents')
+  if (fs.existsSync(agentsDir)) {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(agentsDir, { withFileTypes: true })
+    } catch {
+      entries = []
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        agents.push(entry.name)
+      }
+    }
+  }
+
+  return { skills, hooks, mcpServers, agents }
 }
 
 // ── Current settings ───────────────────────────────────────────────────────────

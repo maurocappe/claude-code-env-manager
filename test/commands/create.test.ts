@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import * as clackPrompts from '@clack/prompts'
+import * as wizardModule from '@/commands/wizard'
 import { runCreate } from '@/commands/create'
 import { ensureCenvHome } from '@/lib/environments'
 import { createTempCenvHome } from '../helpers/mock-env'
@@ -90,16 +91,21 @@ describe('runCreate', () => {
     expect(yaml).toContain('snap-env')
   })
 
-  test('returns early without creating directory for --wizard flag', async () => {
+  test('--wizard delegates to runWizard and does not run basic create path', async () => {
     const tmp = createTempCenvHome()
     cleanupCenvHome = tmp.cleanup
     ensureCenvHome(tmp.cenvHome)
 
     outroSpy = spyOn(clackPrompts, 'outro').mockImplementation(() => {})
+    const wizardSpy = spyOn(wizardModule, 'runWizard').mockResolvedValue(undefined)
 
     await runCreate('wizard-env', { wizard: true }, tmp.cenvHome)
 
-    expect(fs.existsSync(path.join(tmp.cenvHome, 'envs', 'wizard-env'))).toBe(false)
+    expect(wizardSpy).toHaveBeenCalledWith('wizard-env', { cenvHome: tmp.cenvHome })
+    // Basic create path was not taken — no direct outro call from create.ts
+    expect(outroSpy).not.toHaveBeenCalled()
+
+    wizardSpy.mockRestore()
   })
 
   test('--from local path copies env.yaml to personal envs', async () => {

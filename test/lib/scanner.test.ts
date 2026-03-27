@@ -2,7 +2,7 @@ import { describe, expect, test, afterEach } from 'bun:test'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { scanInstalledPlugins, scanInstalledSkills, scanCurrentSettings } from '@/lib/scanner'
+import { scanInstalledPlugins, scanInstalledSkills, scanCurrentSettings, scanPluginComponents } from '@/lib/scanner'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -274,5 +274,179 @@ describe('scanCurrentSettings', () => {
     expect(result).not.toBeNull()
     expect(result?.effortLevel).toBe('high')
     expect((result?.permissions as { allow: string[] })?.allow).toEqual(['Bash(*)', 'Read(*)'])
+  })
+})
+
+// ── scanPluginComponents ───────────────────────────────────────────────────────
+
+describe('scanPluginComponents', () => {
+  let cleanup: () => void
+
+  afterEach(() => cleanup?.())
+
+  test('returns empty arrays when plugin dir does not exist', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const result = scanPluginComponents(path.join(dir, 'nonexistent'))
+    expect(result.skills).toEqual([])
+    expect(result.hooks).toEqual({})
+    expect(result.mcpServers).toEqual([])
+    expect(result.agents).toEqual([])
+  })
+
+  test('scans skills/ directory and returns skill names with SKILL.md', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    // Create skills
+    fs.mkdirSync(path.join(dir, 'skills', 'my-skill'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'skills', 'my-skill', 'SKILL.md'), '# skill\n', 'utf8')
+    fs.mkdirSync(path.join(dir, 'skills', 'not-a-skill'), { recursive: true })
+    // no SKILL.md in not-a-skill — should be excluded
+
+    const result = scanPluginComponents(dir)
+    expect(result.skills).toEqual(['my-skill'])
+  })
+
+  test('scans multiple skills', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    for (const name of ['tdd', 'debugging', 'brainstorming']) {
+      fs.mkdirSync(path.join(dir, 'skills', name), { recursive: true })
+      fs.writeFileSync(path.join(dir, 'skills', name, 'SKILL.md'), `# ${name}\n`, 'utf8')
+    }
+
+    const result = scanPluginComponents(dir)
+    expect(result.skills).toHaveLength(3)
+    expect(result.skills).toContain('tdd')
+    expect(result.skills).toContain('debugging')
+    expect(result.skills).toContain('brainstorming')
+  })
+
+  test('parses hooks/hooks.json into hooks record', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    fs.mkdirSync(path.join(dir, 'hooks'), { recursive: true })
+    const hooksData = {
+      SessionStart: [{ command: 'echo hello' }],
+      Stop: [{ command: 'echo bye' }],
+    }
+    fs.writeFileSync(path.join(dir, 'hooks', 'hooks.json'), JSON.stringify(hooksData), 'utf8')
+
+    const result = scanPluginComponents(dir)
+    expect(Object.keys(result.hooks)).toContain('SessionStart')
+    expect(Object.keys(result.hooks)).toContain('Stop')
+    expect(result.hooks.SessionStart).toHaveLength(1)
+  })
+
+  test('returns empty hooks when hooks/hooks.json does not exist', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    const result = scanPluginComponents(dir)
+    expect(result.hooks).toEqual({})
+  })
+
+  test('returns empty hooks when hooks.json contains invalid JSON', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    fs.mkdirSync(path.join(dir, 'hooks'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'hooks', 'hooks.json'), 'INVALID', 'utf8')
+
+    const result = scanPluginComponents(dir)
+    expect(result.hooks).toEqual({})
+  })
+
+  test('parses MCP server names from .mcp.json', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    const mcpData = {
+      mcpServers: {
+        postgres: { command: 'uvx', args: ['mcp-server-postgres'] },
+        github: { command: 'npx', args: ['@mcp/server-github'] },
+      },
+    }
+    fs.writeFileSync(path.join(dir, '.mcp.json'), JSON.stringify(mcpData), 'utf8')
+
+    const result = scanPluginComponents(dir)
+    expect(result.mcpServers).toContain('postgres')
+    expect(result.mcpServers).toContain('github')
+    expect(result.mcpServers).toHaveLength(2)
+  })
+
+  test('returns empty mcpServers when .mcp.json does not exist', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    const result = scanPluginComponents(dir)
+    expect(result.mcpServers).toEqual([])
+  })
+
+  test('returns empty mcpServers when .mcp.json is malformed', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    fs.writeFileSync(path.join(dir, '.mcp.json'), 'BAD JSON', 'utf8')
+
+    const result = scanPluginComponents(dir)
+    expect(result.mcpServers).toEqual([])
+  })
+
+  test('scans .claude-plugin/agents/ for agent names', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    fs.mkdirSync(path.join(dir, '.claude-plugin', 'agents', 'my-agent'), { recursive: true })
+    fs.mkdirSync(path.join(dir, '.claude-plugin', 'agents', 'other-agent'), { recursive: true })
+
+    const result = scanPluginComponents(dir)
+    expect(result.agents).toContain('my-agent')
+    expect(result.agents).toContain('other-agent')
+    expect(result.agents).toHaveLength(2)
+  })
+
+  test('returns empty agents when agents dir does not exist', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    const result = scanPluginComponents(dir)
+    expect(result.agents).toEqual([])
+  })
+
+  test('returns all components together when full plugin structure exists', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+
+    // Skills
+    fs.mkdirSync(path.join(dir, 'skills', 'tdd'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'skills', 'tdd', 'SKILL.md'), '# tdd\n', 'utf8')
+
+    // Hooks
+    fs.mkdirSync(path.join(dir, 'hooks'), { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'hooks', 'hooks.json'),
+      JSON.stringify({ SessionStart: [{ command: 'echo' }] }),
+      'utf8'
+    )
+
+    // MCP
+    fs.writeFileSync(
+      path.join(dir, '.mcp.json'),
+      JSON.stringify({ mcpServers: { pg: { command: 'uvx' } } }),
+      'utf8'
+    )
+
+    // Agents
+    fs.mkdirSync(path.join(dir, '.claude-plugin', 'agents', 'helper'), { recursive: true })
+
+    const result = scanPluginComponents(dir)
+    expect(result.skills).toEqual(['tdd'])
+    expect(result.hooks).toHaveProperty('SessionStart')
+    expect(result.mcpServers).toEqual(['pg'])
+    expect(result.agents).toEqual(['helper'])
   })
 })

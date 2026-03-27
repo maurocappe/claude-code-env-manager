@@ -6,6 +6,7 @@ import pc from 'picocolors'
 import { CENV_HOME } from '../constants'
 import { createEnvDir } from '../lib/environments'
 import { snapshotCurrentSetup } from '../lib/snapshot'
+import { runWizard } from './wizard'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -195,7 +196,7 @@ export async function runCreate(
   }
 
   if (options.wizard) {
-    log.warn('--wizard is not implemented yet.')
+    await runWizard(name, { cenvHome })
     return
   }
 
