@@ -4,37 +4,9 @@ import os from 'node:os'
 import { outro, log } from '@clack/prompts'
 import pc from 'picocolors'
 import { CENV_HOME } from '../constants'
-import { createEnvDir } from '../lib/environments'
+import { createEnvDir, copyEnvContents } from '../lib/environments'
 import { snapshotCurrentSetup } from '../lib/snapshot'
 import { runWizard } from './wizard'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Recursively copy env files (env.yaml, claude.md, skills/, hooks/) from src to dest.
- * dest must already exist.
- */
-function copyEnvContents(srcDir: string, destDir: string): void {
-  const envYaml = path.join(srcDir, 'env.yaml')
-  if (fs.existsSync(envYaml)) {
-    fs.cpSync(envYaml, path.join(destDir, 'env.yaml'))
-  }
-
-  const claudeMd = path.join(srcDir, 'claude.md')
-  if (fs.existsSync(claudeMd)) {
-    fs.cpSync(claudeMd, path.join(destDir, 'claude.md'))
-  }
-
-  const skillsDir = path.join(srcDir, 'skills')
-  if (fs.existsSync(skillsDir)) {
-    fs.cpSync(skillsDir, path.join(destDir, 'skills'), { recursive: true })
-  }
-
-  const hooksDir = path.join(srcDir, 'hooks')
-  if (fs.existsSync(hooksDir)) {
-    fs.cpSync(hooksDir, path.join(destDir, 'hooks'), { recursive: true })
-  }
-}
 
 /**
  * Implement `--from <source>` creation mode.

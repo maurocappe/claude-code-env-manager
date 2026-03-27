@@ -9,28 +9,8 @@ import { loadEnvConfig } from '../lib/config'
  * Copy items from one env directory to another.
  * Copies env.yaml, claude.md (if present), and skills/ and hooks/ dirs (if present).
  */
-function copyEnvDir(srcDir: string, destDir: string): void {
-  // env.yaml is required
-  fs.cpSync(path.join(srcDir, 'env.yaml'), path.join(destDir, 'env.yaml'))
-
-  // claude.md — optional
-  const claudeMd = path.join(srcDir, 'claude.md')
-  if (fs.existsSync(claudeMd)) {
-    fs.cpSync(claudeMd, path.join(destDir, 'claude.md'))
-  }
-
-  // skills/ — optional
-  const skillsDir = path.join(srcDir, 'skills')
-  if (fs.existsSync(skillsDir)) {
-    fs.cpSync(skillsDir, path.join(destDir, 'skills'), { recursive: true })
-  }
-
-  // hooks/ — optional
-  const hooksDir = path.join(srcDir, 'hooks')
-  if (fs.existsSync(hooksDir)) {
-    fs.cpSync(hooksDir, path.join(destDir, 'hooks'), { recursive: true })
-  }
-}
+// Use shared utility from lib/environments
+import { copyEnvContents } from '../lib/environments'
 
 /**
  * Implement `cenv add <nameOrPath> [--as <targetName>]`.
@@ -127,7 +107,7 @@ export async function runAdd(
   // ── 5. Copy env files ────────────────────────────────────────────────────────
 
   fs.mkdirSync(destDir, { recursive: true })
-  copyEnvDir(srcDir, destDir)
+  copyEnvContents(srcDir, destDir)
 
   // ── 6. Success ───────────────────────────────────────────────────────────────
 

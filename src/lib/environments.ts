@@ -113,6 +113,24 @@ export function envExists(name: string, cenvHome: string = CENV_HOME): boolean {
   return fs.existsSync(envYamlPath)
 }
 
+/**
+ * Copy an environment directory's contents to a destination.
+ * Copies: env.yaml (required), claude.md, skills/, hooks/ (optional).
+ */
+export function copyEnvContents(srcDir: string, destDir: string): void {
+  fs.cpSync(path.join(srcDir, 'env.yaml'), path.join(destDir, 'env.yaml'))
+
+  for (const name of ['claude.md']) {
+    const src = path.join(srcDir, name)
+    if (fs.existsSync(src)) fs.cpSync(src, path.join(destDir, name))
+  }
+
+  for (const dir of ['skills', 'hooks']) {
+    const src = path.join(srcDir, dir)
+    if (fs.existsSync(src)) fs.cpSync(src, path.join(destDir, dir), { recursive: true })
+  }
+}
+
 // ── Path helpers ───────────────────────────────────────────────────────────────
 
 export function getEnvPath(name: string, cenvHome: string = CENV_HOME): string {

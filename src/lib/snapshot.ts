@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { CLAUDE_HOME, CLAUDE_MD_PATH } from '../constants'
-import type { EnvConfig, PluginRef, SettingsConfig } from '../types'
+import type { EnvConfig, HookConfig, McpServerConfig, PluginRef, SettingsConfig } from '../types'
 import { writeEnvConfig } from './config'
 import {
   scanInstalledPlugins,
@@ -30,6 +30,41 @@ function extractSettingsConfig(raw: Record<string, unknown>): SettingsConfig {
   }
 
   return settings
+}
+
+function extractMcpServers(raw: Record<string, unknown>): Record<string, McpServerConfig> | undefined {
+  const mcpServers = raw.mcpServers as Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> | undefined
+  if (!mcpServers || typeof mcpServers !== 'object') return undefined
+
+  const result: Record<string, McpServerConfig> = {}
+  for (const [name, server] of Object.entries(mcpServers)) {
+    if (!server.command) continue
+    result[name] = {
+      command: server.command,
+      ...(server.args ? { args: server.args } : {}),
+      ...(server.env ? { env: server.env } : {}),
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined
+}
+
+function extractHooks(raw: Record<string, unknown>): Record<string, HookConfig[]> | undefined {
+  const hooks = raw.hooks as Record<string, Array<{ hooks?: Array<{ command?: string }> }>> | undefined
+  if (!hooks || typeof hooks !== 'object') return undefined
+
+  const result: Record<string, HookConfig[]> = {}
+  for (const [event, hookEntries] of Object.entries(hooks)) {
+    const commands: HookConfig[] = []
+    for (const entry of hookEntries) {
+      if (entry.hooks) {
+        for (const h of entry.hooks) {
+          if (h.command) commands.push({ command: h.command })
+        }
+      }
+    }
+    if (commands.length > 0) result[event] = commands
+  }
+  return Object.keys(result).length > 0 ? result : undefined
 }
 
 // ── Snapshot ───────────────────────────────────────────────────────────────────
@@ -88,13 +123,21 @@ export function snapshotCurrentSetup(
   // 4. Extract settings
   const settings = rawSettings ? extractSettingsConfig(rawSettings) : undefined
 
-  // 5. Assemble the EnvConfig
+  // 5. Extract MCP servers from settings
+  const mcpServers = rawSettings ? extractMcpServers(rawSettings) : undefined
+
+  // 6. Extract hooks from settings
+  const hooks = rawSettings ? extractHooks(rawSettings) : undefined
+
+  // 7. Assemble the EnvConfig
   const config: EnvConfig = {
     name: envName,
     description: 'Snapshot of current Claude Code setup',
     isolation: 'additive',
     ...(pluginRefs.length > 0 ? { plugins: { enable: pluginRefs } } : {}),
     ...(skillRefs.length > 0 ? { skills: skillRefs } : {}),
+    ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcp_servers: mcpServers } : {}),
+    ...(hooks && Object.keys(hooks).length > 0 ? { hooks } : {}),
     ...(settings && Object.keys(settings).length > 0 ? { settings } : {}),
   }
 
