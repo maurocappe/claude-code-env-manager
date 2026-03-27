@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import type { EnvConfig, SessionFiles } from '../types'
 
@@ -47,20 +48,25 @@ export function assembleClaudeArgs(
  * Find the claude binary path.
  */
 export function findClaudeBinary(): string {
-  // Try common locations
-  const candidates = [
+  // Try known absolute paths first
+  const absoluteCandidates = [
     path.join(process.env.HOME ?? '', '.local', 'bin', 'claude'),
     '/usr/local/bin/claude',
-    'claude', // fallback to PATH
   ]
 
-  for (const candidate of candidates) {
-    try {
-      const proc = Bun.spawnSync(['which', candidate])
-      if (proc.exitCode === 0) return candidate
-    } catch {
-      // continue
+  for (const candidate of absoluteCandidates) {
+    if (fs.existsSync(candidate)) return candidate
+  }
+
+  // Fall back to PATH lookup
+  try {
+    const proc = Bun.spawnSync(['which', 'claude'])
+    if (proc.exitCode === 0) {
+      const resolved = new TextDecoder().decode(proc.stdout).trim()
+      if (resolved) return resolved
     }
+  } catch {
+    // continue
   }
 
   return 'claude' // let the OS resolve it

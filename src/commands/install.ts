@@ -8,6 +8,7 @@ import {
   resolveSkillDeps,
   checkMcpAvailable,
   installPlugin,
+  cachePlugin,
   installSkill,
   installMcpServer,
 } from '../lib/installer'
@@ -63,7 +64,7 @@ export async function runInstall(
   const skillDeps = resolveSkillDeps(config, env.path, CACHE_DIR)
 
   // 4. Check MCP availability
-  const mcpEntries = Object.entries(config.mcp_servers ?? [])
+  const mcpEntries = Object.entries(config.mcp_servers ?? {})
   const mcpStatus = mcpEntries.map(([name, mcpConfig]) => ({
     name,
     config: mcpConfig,
@@ -162,15 +163,21 @@ export async function runInstall(
   // Plugins: version-mismatch resolutions
   for (const [dep, resolution] of resolvedMismatches) {
     const ref = dep.ref as PluginRef
-    if (resolution === 'upgrade' || resolution === 'cache') {
-      spin.start(`${resolution === 'upgrade' ? 'Upgrading' : 'Caching'} plugin ${ref.name}...`)
+    if (resolution === 'upgrade') {
+      spin.start(`Upgrading plugin ${ref.name}...`)
       try {
         await installPlugin(ref)
-        spin.stop(`${ICON_OK} ${resolution === 'upgrade' ? 'Upgraded' : 'Cached'} plugin ${ref.name}`)
+        spin.stop(`${ICON_OK} Upgraded plugin ${ref.name}`)
       } catch (err) {
-        spin.stop(
-          `${ICON_WARN} Failed to ${resolution === 'upgrade' ? 'upgrade' : 'cache'} plugin ${ref.name}: ${(err as Error).message}`
-        )
+        spin.stop(`${ICON_WARN} Failed to upgrade plugin ${ref.name}: ${(err as Error).message}`)
+      }
+    } else if (resolution === 'cache') {
+      spin.start(`Caching plugin ${ref.name}...`)
+      try {
+        await cachePlugin(ref)
+        spin.stop(`${ICON_OK} Cached plugin ${ref.name}`)
+      } catch (err) {
+        spin.stop(`${ICON_WARN} Failed to cache plugin ${ref.name}: ${(err as Error).message}`)
       }
     }
     // use-installed: no action needed
