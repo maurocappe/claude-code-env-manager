@@ -1,0 +1,5 @@
+{
+  "permissions": { "allow": ["Bash(git *)", "Bash(npm *)", "Edit", "Write"] },
+  "effortLevel": "high",
+  "enabledPlugins": { "superpowers@claude-plugins-official": true }
+}

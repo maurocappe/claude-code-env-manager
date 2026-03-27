@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "plugins": {
+    "superpowers@claude-plugins-official": [{
+      "scope": "user",
+      "installPath": "PLACEHOLDER_PLUGIN_PATH",
+      "version": "5.0.6",
+      "installedAt": "2026-03-01T00:00:00.000Z",
+      "lastUpdated": "2026-03-20T00:00:00.000Z"
+    }]
+  }
+}

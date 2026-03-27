@@ -10,6 +10,8 @@
     "build": "bun build src/index.ts --outdir dist --target bun",
     "compile": "bun build src/index.ts --compile --outfile cenv",
     "test": "bun test",
+    "test:e2e": "bun test test/e2e/",
+    "test:unit": "bun test test/lib/ test/commands/ test/setup.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "oxlint src"
   },
