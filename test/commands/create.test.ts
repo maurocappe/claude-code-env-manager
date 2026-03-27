@@ -1,6 +1,7 @@
 import { describe, expect, test, afterEach, spyOn } from 'bun:test'
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import * as clackPrompts from '@clack/prompts'
 import { runCreate } from '@/commands/create'
 import { ensureCenvHome } from '@/lib/environments'
@@ -101,15 +102,69 @@ describe('runCreate', () => {
     expect(fs.existsSync(path.join(tmp.cenvHome, 'envs', 'wizard-env'))).toBe(false)
   })
 
-  test('returns early without creating directory for --from flag', async () => {
+  test('--from local path copies env.yaml to personal envs', async () => {
     const tmp = createTempCenvHome()
     cleanupCenvHome = tmp.cleanup
     ensureCenvHome(tmp.cenvHome)
 
     outroSpy = spyOn(clackPrompts, 'outro').mockImplementation(() => {})
 
-    await runCreate('from-env', { from: 'github:user/repo' }, tmp.cenvHome)
+    // Create a local env dir to copy from
+    const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cenv-create-from-'))
+    fs.writeFileSync(path.join(srcDir, 'env.yaml'), 'name: from-env\n', 'utf8')
+    fs.writeFileSync(path.join(srcDir, 'claude.md'), '# from-env\n', 'utf8')
 
-    expect(fs.existsSync(path.join(tmp.cenvHome, 'envs', 'from-env'))).toBe(false)
+    try {
+      await runCreate('from-env', { from: srcDir }, tmp.cenvHome)
+
+      const envDir = path.join(tmp.cenvHome, 'envs', 'from-env')
+      expect(fs.existsSync(envDir)).toBe(true)
+      expect(fs.existsSync(path.join(envDir, 'env.yaml'))).toBe(true)
+      expect(outroSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      fs.rmSync(srcDir, { recursive: true, force: true })
+    }
+  })
+
+  test('--from local path also copies claude.md', async () => {
+    const tmp = createTempCenvHome()
+    cleanupCenvHome = tmp.cleanup
+    ensureCenvHome(tmp.cenvHome)
+
+    outroSpy = spyOn(clackPrompts, 'outro').mockImplementation(() => {})
+
+    const srcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cenv-create-from-'))
+    fs.writeFileSync(path.join(srcDir, 'env.yaml'), 'name: from-md-env\n', 'utf8')
+    fs.writeFileSync(path.join(srcDir, 'claude.md'), '# from-md-env\n', 'utf8')
+
+    try {
+      await runCreate('from-md-env', { from: srcDir }, tmp.cenvHome)
+
+      expect(fs.existsSync(path.join(tmp.cenvHome, 'envs', 'from-md-env', 'claude.md'))).toBe(true)
+    } finally {
+      fs.rmSync(srcDir, { recursive: true, force: true })
+    }
+  })
+
+  test('--from local path with .claude-envs subfolder picks first env', async () => {
+    const tmp = createTempCenvHome()
+    cleanupCenvHome = tmp.cleanup
+    ensureCenvHome(tmp.cenvHome)
+
+    outroSpy = spyOn(clackPrompts, 'outro').mockImplementation(() => {})
+
+    // Simulate a repo with .claude-envs/my-env/
+    const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cenv-create-repo-'))
+    const envInRepo = path.join(repoDir, '.claude-envs', 'my-env')
+    fs.mkdirSync(envInRepo, { recursive: true })
+    fs.writeFileSync(path.join(envInRepo, 'env.yaml'), 'name: my-env\n', 'utf8')
+
+    try {
+      await runCreate('from-repo-env', { from: repoDir }, tmp.cenvHome)
+
+      expect(fs.existsSync(path.join(tmp.cenvHome, 'envs', 'from-repo-env', 'env.yaml'))).toBe(true)
+    } finally {
+      fs.rmSync(repoDir, { recursive: true, force: true })
+    }
   })
 })

@@ -12,6 +12,8 @@ import { runAuthDelete } from './commands/auth/delete'
 import { runAllow } from './commands/allow'
 import { runRun } from './commands/run'
 import { runInstall } from './commands/install'
+import { runAdd } from './commands/add'
+import { runDiff } from './commands/diff'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -172,8 +174,8 @@ const diff = defineCommand({
       required: true,
     },
   },
-  run() {
-    notImplemented('diff')
+  async run({ args }) {
+    await runDiff(args.env1, args.env2)
   },
 })
 
@@ -222,8 +224,8 @@ const add = defineCommand({
       required: false,
     },
   },
-  run() {
-    notImplemented('add')
+  async run({ args }) {
+    await runAdd(args.name, { as: args.as as string | undefined })
   },
 })
 
