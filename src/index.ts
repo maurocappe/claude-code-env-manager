@@ -1,6 +1,11 @@
 import { defineCommand, runMain } from 'citty'
 import pc from 'picocolors'
 import { runInit } from './commands/init'
+import { runCreate } from './commands/create'
+import { runList } from './commands/list'
+import { runShow } from './commands/show'
+import { runEdit } from './commands/edit'
+import { runDelete } from './commands/delete'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -90,8 +95,12 @@ const create = defineCommand({
       default: false,
     },
   },
-  run() {
-    notImplemented('create')
+  async run({ args }) {
+    await runCreate(args.name, {
+      snapshot: args.snapshot,
+      from: args.from,
+      wizard: args.wizard,
+    })
   },
 })
 
@@ -109,15 +118,15 @@ const edit = defineCommand({
       default: false,
     },
   },
-  run() {
-    notImplemented('edit')
+  async run({ args }) {
+    await runEdit(args.name, { md: args.md })
   },
 })
 
 const list = defineCommand({
   meta: { name: 'list', description: 'List all environments' },
-  run() {
-    notImplemented('list')
+  async run() {
+    await runList()
   },
 })
 
@@ -130,8 +139,8 @@ const show = defineCommand({
       required: true,
     },
   },
-  run() {
-    notImplemented('show')
+  async run({ args }) {
+    await runShow(args.name)
   },
 })
 
@@ -163,8 +172,8 @@ const del = defineCommand({
       required: true,
     },
   },
-  run() {
-    notImplemented('delete')
+  async run({ args }) {
+    await runDelete(args.name)
   },
 })
 
