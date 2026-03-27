@@ -1,8 +1,9 @@
-import { text, select, log, outro, cancel, isCancel } from '@clack/prompts'
+import { text, select, log, outro, cancel, isCancel, confirm } from '@clack/prompts'
 import pc from 'picocolors'
 import { AUTH_DIR } from '../../constants'
 import type { AuthProfile } from '../../types'
 import { createAuthProfile } from '../../lib/auth'
+import { snapshotOAuthSession, loginAndSnapshotOAuth } from '../../lib/oauth-snapshot'
 
 type AuthType = 'api-key' | 'openrouter' | 'oauth' | 'bedrock' | 'vertex' | 'custom'
 
@@ -46,7 +47,7 @@ export async function runAuthCreate(authDir: string = AUTH_DIR): Promise<void> {
       await handleOpenRouter(String(name), authDir)
       break
     case 'oauth':
-      await handleOAuth()
+      await handleOAuth(String(name), authDir)
       break
     case 'bedrock':
       await handleBedrock(String(name), authDir)
@@ -102,11 +103,36 @@ async function handleOpenRouter(name: string, authDir: string): Promise<void> {
   outro(`${pc.green('✓')} Auth profile ${pc.cyan(pc.bold(name))} created (OpenRouter via keychain)`)
 }
 
-async function handleOAuth(): Promise<void> {
-  log.info(
-    `Use ${pc.cyan('cenv auth snapshot')} to capture your current Claude Code session.\n` +
-    'This flow will be added in a future release.'
-  )
+async function handleOAuth(name: string, authDir: string): Promise<void> {
+  const action = await select({
+    message: 'How to capture OAuth credentials?',
+    options: [
+      { value: 'snapshot', label: 'Snapshot current session', hint: 'capture what\'s logged in now' },
+      { value: 'login', label: 'Log in to a different account', hint: 'logout → login → snapshot → restore' },
+    ],
+  })
+  if (isCancel(action)) { cancel('Cancelled'); return }
+
+  if (action === 'snapshot') {
+    const result = await snapshotOAuthSession(name, authDir)
+    outro(
+      `${pc.green('✓')} Auth profile ${pc.cyan(pc.bold(name))} created\n` +
+      `  Subscription: ${result.subscriptionType}\n` +
+      `  Credentials stored in keychain`
+    )
+  } else {
+    const proceed = await confirm({
+      message: 'This will log you out of Claude Code temporarily. Your current session will be restored after. Continue?',
+    })
+    if (isCancel(proceed) || !proceed) { cancel('Cancelled'); return }
+
+    const result = await loginAndSnapshotOAuth(name, authDir)
+    outro(
+      `${pc.green('✓')} Auth profile ${pc.cyan(pc.bold(name))} created\n` +
+      `  Subscription: ${result.subscriptionType}\n` +
+      `  Original session restored`
+    )
+  }
 }
 
 async function handleBedrock(name: string, authDir: string): Promise<void> {
