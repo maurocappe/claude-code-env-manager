@@ -2,6 +2,7 @@ import { outro, log } from '@clack/prompts'
 import pc from 'picocolors'
 import { CENV_HOME } from '../constants'
 import { createEnvDir } from '../lib/environments'
+import { snapshotCurrentSetup } from '../lib/snapshot'
 
 /**
  * Implement `cenv create <name>`.
@@ -19,11 +20,6 @@ export async function runCreate(
   } = {},
   cenvHome: string = CENV_HOME
 ): Promise<void> {
-  if (options.snapshot) {
-    log.warn('--snapshot is not implemented yet.')
-    return
-  }
-
   if (options.from) {
     log.warn('--from is not implemented yet.')
     return
@@ -36,6 +32,14 @@ export async function runCreate(
 
   const envPath = createEnvDir(name, cenvHome)
   const displayPath = envPath.replace(process.env.HOME ?? '', '~')
+
+  if (options.snapshot) {
+    snapshotCurrentSetup(envPath, name)
+    outro(
+      `${pc.green('✓')} Created environment ${pc.cyan(pc.bold(name))} at ${pc.dim(displayPath)} (snapshotted current setup)`
+    )
+    return
+  }
 
   outro(`${pc.green('✓')} Created environment ${pc.cyan(pc.bold(name))} at ${pc.dim(displayPath)}`)
 }

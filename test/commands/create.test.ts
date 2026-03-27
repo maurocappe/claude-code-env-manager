@@ -70,7 +70,7 @@ describe('runCreate', () => {
     await expect(runCreate('dup-env', {}, tmp.cenvHome)).rejects.toThrow(/already exists/)
   })
 
-  test('returns early without creating directory for --snapshot flag', async () => {
+  test('--snapshot creates directory and writes snapshotted env.yaml', async () => {
     const tmp = createTempCenvHome()
     cleanupCenvHome = tmp.cleanup
     ensureCenvHome(tmp.cenvHome)
@@ -79,8 +79,14 @@ describe('runCreate', () => {
 
     await runCreate('snap-env', { snapshot: true }, tmp.cenvHome)
 
-    // Directory should NOT be created (returned early)
-    expect(fs.existsSync(path.join(tmp.cenvHome, 'envs', 'snap-env'))).toBe(false)
+    // Directory should be created (snapshot is now implemented)
+    const envPath = path.join(tmp.cenvHome, 'envs', 'snap-env')
+    expect(fs.existsSync(envPath)).toBe(true)
+    expect(fs.existsSync(path.join(envPath, 'env.yaml'))).toBe(true)
+    expect(fs.existsSync(path.join(envPath, 'claude.md'))).toBe(true)
+    // env.yaml should contain the env name
+    const yaml = fs.readFileSync(path.join(envPath, 'env.yaml'), 'utf8')
+    expect(yaml).toContain('snap-env')
   })
 
   test('returns early without creating directory for --wizard flag', async () => {

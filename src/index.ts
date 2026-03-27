@@ -6,6 +6,9 @@ import { runList } from './commands/list'
 import { runShow } from './commands/show'
 import { runEdit } from './commands/edit'
 import { runDelete } from './commands/delete'
+import { runAuthCreate } from './commands/auth/create'
+import { runAuthList } from './commands/auth/list'
+import { runAuthDelete } from './commands/auth/delete'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -17,18 +20,15 @@ function notImplemented(name: string): void {
 
 const authCreate = defineCommand({
   meta: { name: 'create', description: 'Create a new auth profile' },
-  args: {
-    name: { type: 'positional', description: 'Profile name', required: false },
-  },
-  run() {
-    notImplemented('auth create')
+  async run() {
+    await runAuthCreate()
   },
 })
 
 const authList = defineCommand({
   meta: { name: 'list', description: 'List auth profiles' },
   run() {
-    notImplemented('auth list')
+    runAuthList()
   },
 })
 
@@ -37,8 +37,8 @@ const authDelete = defineCommand({
   args: {
     name: { type: 'positional', description: 'Profile name', required: true },
   },
-  run() {
-    notImplemented('auth delete')
+  async run({ args }) {
+    await runAuthDelete(args.name)
   },
 })
 
