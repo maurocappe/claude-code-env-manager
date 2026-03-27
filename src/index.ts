@@ -1,5 +1,6 @@
 import { defineCommand, runMain } from 'citty'
 import pc from 'picocolors'
+import { runInit } from './commands/init'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -224,8 +225,8 @@ const allow = defineCommand({
 
 const init = defineCommand({
   meta: { name: 'init', description: 'First-time setup: create ~/.claude-envs/' },
-  run() {
-    notImplemented('init')
+  async run() {
+    await runInit()
   },
 })
 
