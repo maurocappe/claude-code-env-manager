@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { CENV_HOME, ENVS_DIR, AUTH_DIR, CACHE_DIR, SESSIONS_DIR } from '../constants'
+import { CENV_HOME } from '../constants'
 import { EnvironmentNotFoundError } from '../errors'
 import { writeEnvConfig } from './config'
 
