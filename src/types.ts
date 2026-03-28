@@ -8,6 +8,7 @@ export interface EnvConfig {
     disable?: string[]
   }
   skills?: SkillRef[]
+  commands?: CommandRef[]
   mcp_servers?: Record<string, McpServerConfig>
   hooks?: Record<string, HookConfig[]>
   settings?: SettingsConfig
@@ -26,6 +27,10 @@ export interface SkillRef {
   path?: string
 }
 
+export interface CommandRef {
+  path: string
+}
+
 export interface McpServerConfig {
   install?: string
   command: string
@@ -40,6 +45,7 @@ export interface HookConfig {
 export interface SettingsConfig {
   effortLevel?: 'low' | 'medium' | 'high'
   permissions?: PermissionsConfig
+  statusLine?: Record<string, unknown>
 }
 
 export interface PermissionsConfig {
