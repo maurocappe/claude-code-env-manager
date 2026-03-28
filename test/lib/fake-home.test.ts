@@ -1,0 +1,566 @@
+import { describe, test, expect, afterEach, mock, spyOn } from 'bun:test'
+import fs from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
+import { buildFakeHome } from '@/lib/fake-home'
+import type { EnvConfig } from '@/types'
+import * as keychainModule from '@/lib/keychain'
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Creates a temp env dir with env.yaml and claude.md, returns envDir and cleanup.
+ */
+function createTempEnvDir(name: string): { envDir: string; cleanup: () => void } {
+  const envDir = fs.mkdtempSync(path.join(os.tmpdir(), `cenv-fh-test-${name}-`))
+  fs.writeFileSync(
+    path.join(envDir, 'env.yaml'),
+    `name: ${name}\n`,
+    'utf8',
+  )
+  fs.writeFileSync(
+    path.join(envDir, 'claude.md'),
+    `# Claude instructions for ${name}\n`,
+    'utf8',
+  )
+  return {
+    envDir,
+    cleanup() {
+      fs.rmSync(envDir, { recursive: true, force: true })
+    },
+  }
+}
+
+/**
+ * Creates a temp dir simulating a real HOME with .claude/ structure,
+ * plugins, skills, projects, commands, and dotfiles.
+ */
+function createFakeRealHome(): { realHome: string; cleanup: () => void } {
+  const realHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cenv-fh-real-home-'))
+  const claudeHome = path.join(realHome, '.claude')
+
+  // installed_plugins.json with 3 test plugins
+  const pluginsDir = path.join(claudeHome, 'plugins')
+  fs.mkdirSync(pluginsDir, { recursive: true })
+  const pluginRegistry = {
+    version: 2,
+    plugins: {
+      'alpha@source-a': [
+        { scope: 'user', installPath: '/fake/alpha', version: '1.0.0', installedAt: '2025-01-01' },
+      ],
+      'beta@source-b': [
+        { scope: 'user', installPath: '/fake/beta-user', version: '2.0.0', installedAt: '2025-01-02' },
+        { scope: 'local', installPath: '/fake/beta-local', version: '2.0.0', installedAt: '2025-01-02', projectPath: '/some/project' },
+      ],
+      'gamma@source-c': [
+        { scope: 'user', installPath: '/fake/gamma', version: '3.0.0', installedAt: '2025-01-03' },
+      ],
+    },
+  }
+  fs.writeFileSync(
+    path.join(pluginsDir, 'installed_plugins.json'),
+    JSON.stringify(pluginRegistry, null, 2),
+    'utf8',
+  )
+
+  // Plugin cache directory
+  const cacheDir = path.join(pluginsDir, 'cache', 'source-a', 'alpha', '1.0.0')
+  fs.mkdirSync(cacheDir, { recursive: true })
+  fs.writeFileSync(path.join(cacheDir, 'plugin.json'), '{}', 'utf8')
+
+  // Plugin metadata files
+  fs.writeFileSync(
+    path.join(pluginsDir, 'known_marketplaces.json'),
+    JSON.stringify({ marketplaces: ['official'] }),
+    'utf8',
+  )
+  fs.writeFileSync(
+    path.join(pluginsDir, 'blocklist.json'),
+    JSON.stringify({ blocked: [] }),
+    'utf8',
+  )
+
+  // projects/ directory
+  fs.mkdirSync(path.join(claudeHome, 'projects'), { recursive: true })
+
+  // commands/ directory
+  fs.mkdirSync(path.join(claudeHome, 'commands'), { recursive: true })
+
+  // skills/test-skill/SKILL.md
+  const skillDir = path.join(claudeHome, 'skills', 'test-skill')
+  fs.mkdirSync(skillDir, { recursive: true })
+  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# Test Skill\n', 'utf8')
+
+  // .gitconfig file
+  fs.writeFileSync(path.join(realHome, '.gitconfig'), '[user]\n  name = Test\n', 'utf8')
+
+  return {
+    realHome,
+    cleanup() {
+      fs.rmSync(realHome, { recursive: true, force: true })
+    },
+  }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+describe('buildFakeHome — directory structure', () => {
+  let envCleanup: () => void
+  let homeCleanup: () => void
+
+  afterEach(() => {
+    envCleanup?.()
+    homeCleanup?.()
+  })
+
+  test('creates home/.claude/ directory structure', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('struct')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'struct' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    expect(fs.existsSync(result.homePath)).toBe(true)
+    expect(fs.existsSync(result.claudeHome)).toBe(true)
+    expect(result.homePath).toBe(path.join(envDir, 'home'))
+    expect(result.claudeHome).toBe(path.join(envDir, 'home', '.claude'))
+  })
+
+  test('creates persistent dirs: plugins/data, sessions, session-env', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('persist')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'persist' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    expect(fs.existsSync(path.join(result.claudeHome, 'plugins', 'data'))).toBe(true)
+    expect(fs.existsSync(path.join(result.claudeHome, 'sessions'))).toBe(true)
+    expect(fs.existsSync(path.join(result.claudeHome, 'session-env'))).toBe(true)
+  })
+
+  test('preserves persistent dirs across regenerations', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('regen')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'regen' }
+
+    // First build
+    const result1 = await buildFakeHome(config, envDir, realHome)
+    const markerPath = path.join(result1.claudeHome, 'plugins', 'data', 'marker.txt')
+    fs.writeFileSync(markerPath, 'preserved', 'utf8')
+
+    // Second build (regeneration)
+    await buildFakeHome(config, envDir, realHome)
+
+    expect(fs.existsSync(markerPath)).toBe(true)
+    expect(fs.readFileSync(markerPath, 'utf8')).toBe('preserved')
+  })
+})
+
+describe('buildFakeHome — shared symlinks', () => {
+  let envCleanup: () => void
+  let homeCleanup: () => void
+
+  afterEach(() => {
+    envCleanup?.()
+    homeCleanup?.()
+  })
+
+  test('creates plugins/cache symlink to real HOME', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('cache-sym')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'cache-sym' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const cacheLink = path.join(result.claudeHome, 'plugins', 'cache')
+    const stat = fs.lstatSync(cacheLink)
+    expect(stat.isSymbolicLink()).toBe(true)
+
+    const target = fs.readlinkSync(cacheLink)
+    expect(target).toBe(path.join(realHome, '.claude', 'plugins', 'cache'))
+  })
+
+  test('creates projects symlink to real HOME', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('proj-sym')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'proj-sym' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const projectsLink = path.join(result.claudeHome, 'projects')
+    const stat = fs.lstatSync(projectsLink)
+    expect(stat.isSymbolicLink()).toBe(true)
+    expect(fs.readlinkSync(projectsLink)).toBe(path.join(realHome, '.claude', 'projects'))
+  })
+
+  test('creates commands symlink to real HOME', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('cmd-sym')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'cmd-sym' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const commandsLink = path.join(result.claudeHome, 'commands')
+    const stat = fs.lstatSync(commandsLink)
+    expect(stat.isSymbolicLink()).toBe(true)
+    expect(fs.readlinkSync(commandsLink)).toBe(path.join(realHome, '.claude', 'commands'))
+  })
+
+  test('creates dotfile symlinks for existing files', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('dotfile-exist')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'dotfile-exist' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    // .gitconfig was created in the fake real HOME
+    const gitconfigLink = path.join(result.homePath, '.gitconfig')
+    const stat = fs.lstatSync(gitconfigLink)
+    expect(stat.isSymbolicLink()).toBe(true)
+    expect(fs.readlinkSync(gitconfigLink)).toBe(path.join(realHome, '.gitconfig'))
+  })
+
+  test('skips dotfile symlinks for missing files', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('dotfile-miss')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'dotfile-miss' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    // .npmrc was NOT created in the fake real HOME, so no symlink should exist
+    const npmrcLink = path.join(result.homePath, '.npmrc')
+    expect(fs.existsSync(npmrcLink)).toBe(false)
+    // Also confirm lstat would fail (truly absent, not just a broken symlink)
+    expect(() => fs.lstatSync(npmrcLink)).toThrow()
+  })
+})
+
+describe('buildFakeHome — config regeneration', () => {
+  let envCleanup: () => void
+  let homeCleanup: () => void
+
+  afterEach(() => {
+    envCleanup?.()
+    homeCleanup?.()
+  })
+
+  test('generates settings.json with effortLevel and permissions', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('settings')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = {
+      name: 'settings',
+      settings: {
+        effortLevel: 'high',
+        permissions: { allow: ['Bash(*)', 'Edit'] },
+      },
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const settingsPath = path.join(result.claudeHome, 'settings.json')
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+    expect(settings.effortLevel).toBe('high')
+    expect(settings.permissions.allow).toEqual(['Bash(*)', 'Edit'])
+  })
+
+  test('generates settings.json with hooks in Claude Code format', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('hooks')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = {
+      name: 'hooks',
+      hooks: {
+        UserPromptSubmit: [{ command: 'echo hello' }],
+        Stop: [{ command: 'echo bye' }],
+      },
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(result.claudeHome, 'settings.json'), 'utf8'),
+    )
+    expect(settings.hooks.UserPromptSubmit).toEqual([
+      { hooks: [{ type: 'command', command: 'echo hello' }] },
+    ])
+    expect(settings.hooks.Stop).toEqual([
+      { hooks: [{ type: 'command', command: 'echo bye' }] },
+    ])
+  })
+
+  test('generates settings.json with disallowedTools from plugins.disable', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('disable')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = {
+      name: 'disable',
+      plugins: {
+        disable: ['superpowers:brainstorming', 'superpowers:tdd'],
+      },
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(result.claudeHome, 'settings.json'), 'utf8'),
+    )
+    expect(settings.disallowedTools).toEqual([
+      'Skill(superpowers:brainstorming)',
+      'Skill(superpowers:tdd)',
+    ])
+  })
+
+  test('generates installed_plugins.json with only selected plugins', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('plugins-filter')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // Real HOME has alpha, beta, gamma — only enable alpha
+    const config: EnvConfig = {
+      name: 'plugins-filter',
+      plugins: {
+        enable: [{ name: 'alpha', source: 'source-a' }],
+      },
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const registryPath = path.join(result.claudeHome, 'plugins', 'installed_plugins.json')
+    const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'))
+    expect(registry.version).toBe(2)
+    expect(Object.keys(registry.plugins)).toEqual(['alpha@source-a'])
+    expect(registry.plugins['alpha@source-a']).toHaveLength(1)
+  })
+
+  test('preserves all scope entries for a selected plugin', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('plugins-scopes')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // beta has both user and local scope entries in the real HOME
+    const config: EnvConfig = {
+      name: 'plugins-scopes',
+      plugins: {
+        enable: [{ name: 'beta', source: 'source-b' }],
+      },
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const registry = JSON.parse(
+      fs.readFileSync(path.join(result.claudeHome, 'plugins', 'installed_plugins.json'), 'utf8'),
+    )
+    expect(Object.keys(registry.plugins)).toEqual(['beta@source-b'])
+    expect(registry.plugins['beta@source-b']).toHaveLength(2)
+    expect(registry.plugins['beta@source-b'][0].scope).toBe('user')
+    expect(registry.plugins['beta@source-b'][1].scope).toBe('local')
+  })
+
+  test('writes empty plugins when none selected', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('plugins-empty')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'plugins-empty' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const registry = JSON.parse(
+      fs.readFileSync(path.join(result.claudeHome, 'plugins', 'installed_plugins.json'), 'utf8'),
+    )
+    expect(registry.version).toBe(2)
+    expect(registry.plugins).toEqual({})
+  })
+
+  test('creates CLAUDE.md symlink pointing to env claude.md', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('claudemd')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'claudemd' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const claudeMdLink = path.join(result.claudeHome, 'CLAUDE.md')
+    const stat = fs.lstatSync(claudeMdLink)
+    expect(stat.isSymbolicLink()).toBe(true)
+    expect(fs.readlinkSync(claudeMdLink)).toBe(path.join(envDir, 'claude.md'))
+  })
+
+  test('generates .mcp.json with server configs', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('mcp')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = {
+      name: 'mcp',
+      mcp_servers: {
+        sqlite: {
+          command: 'npx',
+          args: ['-y', 'mcp-server-sqlite'],
+          env: { DB_PATH: '/tmp/test.db' },
+        },
+        simple: {
+          command: 'echo',
+        },
+      },
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const mcpPath = path.join(result.homePath, '.mcp.json')
+    const mcpConfig = JSON.parse(fs.readFileSync(mcpPath, 'utf8'))
+    expect(mcpConfig.mcpServers.sqlite.command).toBe('npx')
+    expect(mcpConfig.mcpServers.sqlite.args).toEqual(['-y', 'mcp-server-sqlite'])
+    expect(mcpConfig.mcpServers.sqlite.env.DB_PATH).toBe('/tmp/test.db')
+    expect(mcpConfig.mcpServers.simple.command).toBe('echo')
+    expect(mcpConfig.mcpServers.simple.args).toBeUndefined()
+  })
+
+  test('resolves keychain: references in MCP env vars', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('mcp-keychain')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // Mock keychainRead via spyOn (same pattern as auth.test.ts)
+    const keychainSpy = spyOn(keychainModule, 'keychainRead').mockImplementation(
+      async (_service: string) => 'resolved-secret',
+    )
+
+    try {
+      const config: EnvConfig = {
+        name: 'mcp-keychain',
+        mcp_servers: {
+          'auth-server': {
+            command: 'node',
+            args: ['server.js'],
+            env: {
+              API_KEY: 'keychain:my-api-key',
+              PLAIN_VAR: 'plain-value',
+            },
+          },
+        },
+      }
+      const result = await buildFakeHome(config, envDir, realHome)
+
+      const mcpConfig = JSON.parse(
+        fs.readFileSync(path.join(result.homePath, '.mcp.json'), 'utf8'),
+      )
+      expect(keychainSpy).toHaveBeenCalledWith('my-api-key')
+      expect(mcpConfig.mcpServers['auth-server'].env.API_KEY).toBe('resolved-secret')
+      expect(mcpConfig.mcpServers['auth-server'].env.PLAIN_VAR).toBe('plain-value')
+    } finally {
+      mock.restore()
+    }
+  })
+})
+
+describe('buildFakeHome — skill symlinks', () => {
+  let envCleanup: () => void
+  let homeCleanup: () => void
+
+  afterEach(() => {
+    envCleanup?.()
+    homeCleanup?.()
+  })
+
+  test('creates skill symlinks for selected skills', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('skills')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const skillPath = path.join(realHome, '.claude', 'skills', 'test-skill')
+
+    const config: EnvConfig = {
+      name: 'skills',
+      skills: [{ name: 'test-skill', path: skillPath }],
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const skillsDir = path.join(result.claudeHome, 'skills')
+    const entries = fs.readdirSync(skillsDir)
+    expect(entries).toContain('test-skill')
+
+    const skillLink = path.join(skillsDir, 'test-skill')
+    const stat = fs.lstatSync(skillLink)
+    expect(stat.isSymbolicLink()).toBe(true)
+  })
+
+  test('clears and recreates skill symlinks on regeneration', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('skills-regen')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const skillPath = path.join(realHome, '.claude', 'skills', 'test-skill')
+
+    // Create a second skill in the real HOME
+    const skillBDir = path.join(realHome, '.claude', 'skills', 'skill-b')
+    fs.mkdirSync(skillBDir, { recursive: true })
+    fs.writeFileSync(path.join(skillBDir, 'SKILL.md'), '# Skill B\n', 'utf8')
+
+    // First build with skill A
+    const configA: EnvConfig = {
+      name: 'skills-regen',
+      skills: [{ name: 'test-skill', path: skillPath }],
+    }
+    const result = await buildFakeHome(configA, envDir, realHome)
+
+    let entries = fs.readdirSync(path.join(result.claudeHome, 'skills'))
+    expect(entries).toContain('test-skill')
+    expect(entries).not.toContain('skill-b')
+
+    // Second build with skill B only
+    const configB: EnvConfig = {
+      name: 'skills-regen',
+      skills: [{ name: 'skill-b', path: skillBDir }],
+    }
+    await buildFakeHome(configB, envDir, realHome)
+
+    entries = fs.readdirSync(path.join(result.claudeHome, 'skills'))
+    expect(entries).toContain('skill-b')
+    expect(entries).not.toContain('test-skill')
+  })
+
+  test('skips skills with nonexistent paths', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('skills-missing')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = {
+      name: 'skills-missing',
+      skills: [{ name: 'ghost', path: '/nonexistent/skill/path' }],
+    }
+
+    // Should not throw
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const skillsDir = path.join(result.claudeHome, 'skills')
+    const entries = fs.readdirSync(skillsDir)
+    expect(entries).toHaveLength(0)
+  })
+})
