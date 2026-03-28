@@ -14,6 +14,9 @@ export interface FakeHomeResult {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
+/** Allowed keychain service prefixes for MCP env var resolution. */
+const ALLOWED_KEYCHAIN_PREFIXES = ['cenv-auth:', 'Claude Code-'] as const
+
 /** Dotfiles/directories from the real HOME that are symlinked into the fake HOME. */
 const DOTFILE_SYMLINKS = [
   '.gitconfig',
@@ -24,6 +27,17 @@ const DOTFILE_SYMLINKS = [
   '.bunfig.toml',
   '.claude.json',  // Claude Code app state (startup count, theme, tips) — prevents first-run wizard
 ] as const
+
+// ── Keychain validation ─────────────────────────────────────────────────────
+
+/**
+ * Check whether a keychain service name is allowed for MCP env var resolution.
+ * Only cenv-owned namespaces are permitted to prevent malicious env.yaml files
+ * from reading arbitrary macOS keychain entries.
+ */
+function isAllowedKeychainService(service: string): boolean {
+  return ALLOWED_KEYCHAIN_PREFIXES.some(prefix => service.startsWith(prefix))
+}
 
 // ── Main entry point ─────────────────────────────────────────────────────────
 
@@ -351,6 +365,10 @@ async function generateMcpConfig(
       for (const [key, value] of Object.entries(server.env)) {
         if (value.startsWith('keychain:')) {
           const keychainKey = value.slice('keychain:'.length)
+          if (!isAllowedKeychainService(keychainKey)) {
+            // Skip unauthorized keychain access — only cenv-owned namespaces allowed
+            continue
+          }
           const resolved = await keychainRead(keychainKey)
           if (resolved) {
             resolvedEnv[key] = resolved

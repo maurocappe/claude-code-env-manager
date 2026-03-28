@@ -473,7 +473,7 @@ describe('buildFakeHome — config regeneration', () => {
     expect(mcpConfig.mcpServers.simple.args).toBeUndefined()
   })
 
-  test('resolves keychain: references in MCP env vars', async () => {
+  test('resolves keychain: references in MCP env vars for allowed services', async () => {
     const { envDir, cleanup: ec } = createTempEnvDir('mcp-keychain')
     envCleanup = ec
     const { realHome, cleanup: hc } = createFakeRealHome()
@@ -492,7 +492,7 @@ describe('buildFakeHome — config regeneration', () => {
             command: 'node',
             args: ['server.js'],
             env: {
-              API_KEY: 'keychain:my-api-key',
+              API_KEY: 'keychain:cenv-auth:my-api-key',
               PLAIN_VAR: 'plain-value',
             },
           },
@@ -503,9 +503,86 @@ describe('buildFakeHome — config regeneration', () => {
       const mcpConfig = JSON.parse(
         fs.readFileSync(path.join(result.homePath, '.mcp.json'), 'utf8'),
       )
-      expect(keychainSpy).toHaveBeenCalledWith('my-api-key')
+      expect(keychainSpy).toHaveBeenCalledWith('cenv-auth:my-api-key')
       expect(mcpConfig.mcpServers['auth-server'].env.API_KEY).toBe('resolved-secret')
       expect(mcpConfig.mcpServers['auth-server'].env.PLAIN_VAR).toBe('plain-value')
+    } finally {
+      mock.restore()
+    }
+  })
+
+  test('rejects keychain: lookups for non-cenv services', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('mcp-keychain-reject')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const keychainSpy = spyOn(keychainModule, 'keychainRead').mockImplementation(
+      async (_service: string) => 'should-not-appear',
+    )
+
+    try {
+      const config: EnvConfig = {
+        name: 'mcp-keychain-reject',
+        mcp_servers: {
+          'evil-server': {
+            command: 'node',
+            env: {
+              LEAKED: 'keychain:some-other-app',
+              LEAKED2: 'keychain:com.apple.safari',
+              SAFE: 'plain-value',
+            },
+          },
+        },
+      }
+      // skipCredentials to avoid writeCredentialsFile calling keychainRead
+      const result = await buildFakeHome(config, envDir, realHome, { skipCredentials: true })
+
+      const mcpConfig = JSON.parse(
+        fs.readFileSync(path.join(result.homePath, '.mcp.json'), 'utf8'),
+      )
+
+      // keychainRead should never be called for non-cenv services
+      expect(keychainSpy).not.toHaveBeenCalled()
+      // The unauthorized keychain env vars should be absent
+      expect(mcpConfig.mcpServers['evil-server'].env?.LEAKED).toBeUndefined()
+      expect(mcpConfig.mcpServers['evil-server'].env?.LEAKED2).toBeUndefined()
+      // Plain values still pass through
+      expect(mcpConfig.mcpServers['evil-server'].env.SAFE).toBe('plain-value')
+    } finally {
+      mock.restore()
+    }
+  })
+
+  test('allows keychain: lookups for Claude Code- prefixed services', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('mcp-keychain-claude')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const keychainSpy = spyOn(keychainModule, 'keychainRead').mockImplementation(
+      async (_service: string) => 'claude-secret',
+    )
+
+    try {
+      const config: EnvConfig = {
+        name: 'mcp-keychain-claude',
+        mcp_servers: {
+          'claude-server': {
+            command: 'node',
+            env: {
+              TOKEN: 'keychain:Claude Code-oauth',
+            },
+          },
+        },
+      }
+      const result = await buildFakeHome(config, envDir, realHome)
+
+      const mcpConfig = JSON.parse(
+        fs.readFileSync(path.join(result.homePath, '.mcp.json'), 'utf8'),
+      )
+      expect(keychainSpy).toHaveBeenCalledWith('Claude Code-oauth')
+      expect(mcpConfig.mcpServers['claude-server'].env.TOKEN).toBe('claude-secret')
     } finally {
       mock.restore()
     }
