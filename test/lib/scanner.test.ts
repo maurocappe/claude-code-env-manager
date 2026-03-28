@@ -2,7 +2,15 @@ import { describe, expect, test, afterEach } from 'bun:test'
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { scanInstalledPlugins, scanInstalledSkills, scanCurrentSettings, scanPluginComponents } from '@/lib/scanner'
+import {
+  scanInstalledPlugins,
+  scanInstalledSkills,
+  scanCurrentSettings,
+  scanPluginComponents,
+  scanCurrentHooks,
+  scanStatusLine,
+  scanInstalledCommands,
+} from '@/lib/scanner'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -448,5 +456,253 @@ describe('scanPluginComponents', () => {
     expect(result.hooks).toHaveProperty('SessionStart')
     expect(result.mcpServers).toEqual(['pg'])
     expect(result.agents).toEqual(['helper'])
+  })
+})
+
+// ── scanCurrentHooks ──────────────────────────────────────────────────────────
+
+describe('scanCurrentHooks', () => {
+  let cleanup: () => void
+
+  afterEach(() => cleanup?.())
+
+  test('extracts hook commands from Claude Code settings format', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const p = path.join(dir, 'settings.json')
+
+    const settings = {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [
+              { type: 'command', command: 'echo "before bash"' },
+              { type: 'command', command: 'validate-bash.sh' },
+            ],
+          },
+        ],
+        PostToolUse: [
+          {
+            matcher: '*',
+            hooks: [{ type: 'command', command: 'log-tool-use.sh' }],
+          },
+        ],
+      },
+    }
+    fs.writeFileSync(p, JSON.stringify(settings), 'utf8')
+
+    const result = scanCurrentHooks(p)
+    expect(Object.keys(result)).toEqual(['PreToolUse', 'PostToolUse'])
+    expect(result.PreToolUse).toEqual([
+      { command: 'echo "before bash"' },
+      { command: 'validate-bash.sh' },
+    ])
+    expect(result.PostToolUse).toEqual([{ command: 'log-tool-use.sh' }])
+  })
+
+  test('returns empty when no hooks in settings', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const p = path.join(dir, 'settings.json')
+    fs.writeFileSync(p, JSON.stringify({ effortLevel: 'high' }), 'utf8')
+
+    expect(scanCurrentHooks(p)).toEqual({})
+  })
+
+  test('returns empty when settings file missing', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    expect(scanCurrentHooks(path.join(dir, 'settings.json'))).toEqual({})
+  })
+
+  test('skips non-command hook types', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const p = path.join(dir, 'settings.json')
+
+    const settings = {
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              { type: 'command', command: 'echo hello' },
+              { type: 'other', value: 'something' },
+            ],
+          },
+        ],
+      },
+    }
+    fs.writeFileSync(p, JSON.stringify(settings), 'utf8')
+
+    const result = scanCurrentHooks(p)
+    expect(result.PreToolUse).toEqual([{ command: 'echo hello' }])
+  })
+
+  test('skips events where no command hooks are found', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const p = path.join(dir, 'settings.json')
+
+    const settings = {
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [{ type: 'other', value: 'not a command' }],
+          },
+        ],
+      },
+    }
+    fs.writeFileSync(p, JSON.stringify(settings), 'utf8')
+
+    expect(scanCurrentHooks(p)).toEqual({})
+  })
+})
+
+// ── scanStatusLine ────────────────────────────────────────────────────────────
+
+describe('scanStatusLine', () => {
+  let cleanup: () => void
+
+  afterEach(() => cleanup?.())
+
+  test('returns statusLine object from settings', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const p = path.join(dir, 'settings.json')
+
+    const settings = {
+      statusLine: {
+        enabled: true,
+        command: 'git-status-line.sh',
+      },
+    }
+    fs.writeFileSync(p, JSON.stringify(settings), 'utf8')
+
+    const result = scanStatusLine(p)
+    expect(result).toEqual({ enabled: true, command: 'git-status-line.sh' })
+  })
+
+  test('returns null when no statusLine', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const p = path.join(dir, 'settings.json')
+    fs.writeFileSync(p, JSON.stringify({ effortLevel: 'high' }), 'utf8')
+
+    expect(scanStatusLine(p)).toBeNull()
+  })
+
+  test('returns null when settings file missing', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    expect(scanStatusLine(path.join(dir, 'settings.json'))).toBeNull()
+  })
+
+  test('returns null when statusLine is not an object', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const p = path.join(dir, 'settings.json')
+    fs.writeFileSync(p, JSON.stringify({ statusLine: 'not an object' }), 'utf8')
+
+    expect(scanStatusLine(p)).toBeNull()
+  })
+})
+
+// ── scanInstalledCommands ─────────────────────────────────────────────────────
+
+describe('scanInstalledCommands', () => {
+  let cleanup: () => void
+
+  afterEach(() => cleanup?.())
+
+  test('finds .md files in commands directory', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const cmdsDir = path.join(dir, 'commands')
+    fs.mkdirSync(cmdsDir)
+
+    fs.writeFileSync(path.join(cmdsDir, 'deploy.md'), '# Deploy\nRun deployment', 'utf8')
+    fs.writeFileSync(path.join(cmdsDir, 'test.md'), '# Test\nRun tests', 'utf8')
+
+    const result = scanInstalledCommands(cmdsDir)
+    expect(result).toHaveLength(2)
+
+    const names = result.map((r) => r.name)
+    expect(names).toContain('deploy')
+    expect(names).toContain('test')
+
+    const deploy = result.find((r) => r.name === 'deploy')
+    expect(deploy?.path).toBe(path.join(cmdsDir, 'deploy.md'))
+    expect(deploy?.description).toBeUndefined()
+  })
+
+  test('extracts description from YAML frontmatter', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const cmdsDir = path.join(dir, 'commands')
+    fs.mkdirSync(cmdsDir)
+
+    const content = `---
+description: Run the full deployment pipeline
+author: test
+---
+# Deploy
+
+Steps to deploy...`
+    fs.writeFileSync(path.join(cmdsDir, 'deploy.md'), content, 'utf8')
+
+    const result = scanInstalledCommands(cmdsDir)
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('deploy')
+    expect(result[0].description).toBe('Run the full deployment pipeline')
+  })
+
+  test('handles files without frontmatter', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const cmdsDir = path.join(dir, 'commands')
+    fs.mkdirSync(cmdsDir)
+
+    fs.writeFileSync(path.join(cmdsDir, 'simple.md'), '# Simple command\nJust do it', 'utf8')
+
+    const result = scanInstalledCommands(cmdsDir)
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('simple')
+    expect(result[0].description).toBeUndefined()
+  })
+
+  test('returns empty when directory missing', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    expect(scanInstalledCommands(path.join(dir, 'nonexistent'))).toEqual([])
+  })
+
+  test('ignores non-.md files', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const cmdsDir = path.join(dir, 'commands')
+    fs.mkdirSync(cmdsDir)
+
+    fs.writeFileSync(path.join(cmdsDir, 'readme.txt'), 'not a command', 'utf8')
+    fs.writeFileSync(path.join(cmdsDir, 'script.sh'), '#!/bin/bash', 'utf8')
+    fs.writeFileSync(path.join(cmdsDir, 'deploy.md'), '# Deploy', 'utf8')
+
+    const result = scanInstalledCommands(cmdsDir)
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('deploy')
+  })
+
+  test('ignores subdirectories', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const cmdsDir = path.join(dir, 'commands')
+    fs.mkdirSync(cmdsDir)
+
+    fs.mkdirSync(path.join(cmdsDir, 'subdir.md')) // directory ending in .md
+    fs.writeFileSync(path.join(cmdsDir, 'real.md'), '# Real command', 'utf8')
+
+    const result = scanInstalledCommands(cmdsDir)
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('real')
   })
 })

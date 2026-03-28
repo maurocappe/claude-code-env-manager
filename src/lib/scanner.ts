@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { parse as parseYaml } from 'yaml'
 import {
   CLAUDE_HOME,
   CLAUDE_INSTALLED_PLUGINS_PATH,
@@ -251,4 +252,114 @@ export function scanCurrentSettings(
   } catch {
     return null
   }
+}
+
+// ── Current hooks ─────────────────────────────────────────────────────────────
+
+/**
+ * Extract hook commands from Claude Code settings in the simplified format
+ * used by env.yaml.
+ *
+ * Claude Code stores hooks as:
+ *   `{ "EventName": [{ "hooks": [{ "type": "command", "command": "..." }] }] }`
+ *
+ * This returns:
+ *   `{ "EventName": [{ "command": "..." }] }`
+ *
+ * @param settingsPath Override for the settings.json path (for testing)
+ */
+export function scanCurrentHooks(
+  settingsPath: string = CLAUDE_SETTINGS_PATH
+): Record<string, Array<{ command: string }>> {
+  const settings = scanCurrentSettings(settingsPath)
+  if (!settings?.hooks || typeof settings.hooks !== 'object') return {}
+
+  const result: Record<string, Array<{ command: string }>> = {}
+  for (const [event, hookGroups] of Object.entries(
+    settings.hooks as Record<string, unknown[]>
+  )) {
+    const commands: Array<{ command: string }> = []
+    if (!Array.isArray(hookGroups)) continue
+    for (const group of hookGroups) {
+      const g = group as Record<string, unknown>
+      if (!Array.isArray(g.hooks)) continue
+      for (const hook of g.hooks) {
+        const h = hook as Record<string, unknown>
+        if (h.type === 'command' && typeof h.command === 'string') {
+          commands.push({ command: h.command })
+        }
+      }
+    }
+    if (commands.length > 0) result[event] = commands
+  }
+  return result
+}
+
+// ── Status line ───────────────────────────────────────────────────────────────
+
+/**
+ * Read the `statusLine` object from Claude Code settings, or null if not
+ * present.
+ *
+ * @param settingsPath Override for the settings.json path (for testing)
+ */
+export function scanStatusLine(
+  settingsPath: string = CLAUDE_SETTINGS_PATH
+): Record<string, unknown> | null {
+  const settings = scanCurrentSettings(settingsPath)
+  if (!settings?.statusLine || typeof settings.statusLine !== 'object')
+    return null
+  return settings.statusLine as Record<string, unknown>
+}
+
+// ── Installed commands ────────────────────────────────────────────────────────
+
+/**
+ * Scan `~/.claude/commands/` for installed command files (.md).
+ *
+ * Each entry includes the command name (filename without .md), the full path,
+ * and an optional description extracted from YAML frontmatter.
+ *
+ * @param commandsDir Override for the commands directory path (for testing)
+ */
+export function scanInstalledCommands(
+  commandsDir: string = path.join(CLAUDE_HOME, 'commands')
+): Array<{ name: string; path: string; description?: string }> {
+  if (!fs.existsSync(commandsDir)) return []
+
+  const results: Array<{ name: string; path: string; description?: string }> =
+    []
+
+  let entries: fs.Dirent[]
+  try {
+    entries = fs.readdirSync(commandsDir, { withFileTypes: true })
+  } catch {
+    return []
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.md')) continue
+
+    const filePath = path.join(commandsDir, entry.name)
+    const name = entry.name.slice(0, -3) // remove .md
+
+    // Try to parse YAML frontmatter for description
+    let description: string | undefined
+    try {
+      const content = fs.readFileSync(filePath, 'utf8')
+      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
+      if (fmMatch) {
+        const fm = parseYaml(fmMatch[1])
+        if (fm?.description && typeof fm.description === 'string') {
+          description = fm.description
+        }
+      }
+    } catch {
+      // ignore parse errors
+    }
+
+    results.push({ name, path: filePath, description })
+  }
+
+  return results
 }
