@@ -30,6 +30,6 @@ export const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 
 export const DOTFILE_SYMLINKS = [
   '.gitconfig', '.ssh', '.config', '.local',
-  '.npmrc', '.bunfig.toml',
+  '.npmrc', '.bunfig.toml', '.claude.json',
 ] as const
 

@@ -1,4 +1,5 @@
 import os from 'node:os'
+import path from 'node:path'
 import { select, log, intro, cancel, isCancel } from '@clack/prompts'
 import pc from 'picocolors'
 import { CENV_HOME } from '../constants'
@@ -96,6 +97,8 @@ export async function runRun(
     const profile = loadAuthProfile(opts.auth)
     authEnvVars = await resolveAuthEnvVars(profile, opts.auth)
   }
+  // When no --auth flag, credentials are passed via .credentials.json in the fake HOME
+  // (written by buildFakeHome from the macOS Keychain)
 
   // 5. Find claude binary (must happen BEFORE setting fake HOME)
   const realHome = process.env.HOME ?? os.homedir()
@@ -113,9 +116,15 @@ export async function runRun(
   }
 
   // 7. Launch claude
-  log.step(`Launching claude...`)
-
-  const env = { ...process.env, HOME: fakeHome.homePath, ...authEnvVars }
+  // Ensure real ~/.local/bin stays in PATH — Claude checks $HOME/.local/bin
+  // which with fake HOME would resolve to a different string despite symlinking
+  const realLocalBin = path.join(realHome, '.local', 'bin')
+  let patchedPath = process.env.PATH ?? ''
+  if (!patchedPath.split(':').includes(realLocalBin)) {
+    patchedPath = `${realLocalBin}:${patchedPath}`
+  }
+  const env = { ...process.env, HOME: fakeHome.homePath, PATH: patchedPath, ...authEnvVars }
+  log.step('Launching claude...')
   const proc = Bun.spawn([claudeBin, ...passThroughArgs], {
     stdio: ['inherit', 'inherit', 'inherit'],
     env,

@@ -3,6 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import type { EnvConfig } from '../types'
 import { keychainRead } from './keychain'
+import { CLAUDE_KEYCHAIN_SERVICE } from '../constants'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ const DOTFILE_SYMLINKS = [
   '.local',
   '.npmrc',
   '.bunfig.toml',
+  '.claude.json',  // Claude Code app state (startup count, theme, tips) — prevents first-run wizard
 ] as const
 
 // ── Main entry point ─────────────────────────────────────────────────────────
@@ -94,7 +96,37 @@ export async function buildFakeHome(
     { encoding: 'utf8', mode: 0o600 },
   )
 
+  // .credentials.json — passthrough current OAuth from keychain
+  await writeCredentialsFile(claudeHome)
+
   return { homePath, claudeHome }
+}
+
+// ── Credentials passthrough ──────────────────────────────────────────────────
+
+/**
+ * Read current OAuth credentials from macOS Keychain and write them as
+ * .credentials.json in the fake .claude/ directory. This makes Claude Code
+ * recognize the user as authenticated on startup.
+ *
+ * Silently skips if no credentials are found (Claude will prompt for login).
+ */
+async function writeCredentialsFile(claudeHome: string): Promise<void> {
+  try {
+    const raw = await keychainRead(CLAUDE_KEYCHAIN_SERVICE)
+    if (!raw) return
+
+    const parsed = JSON.parse(raw)
+    if (!parsed?.claudeAiOauth?.accessToken) return
+
+    fs.writeFileSync(
+      path.join(claudeHome, '.credentials.json'),
+      JSON.stringify(parsed, null, 2),
+      { encoding: 'utf8', mode: 0o600 },
+    )
+  } catch {
+    // Keychain read failed or credentials malformed — skip silently
+  }
 }
 
 // ── Shared symlinks ──────────────────────────────────────────────────────────
@@ -125,10 +157,6 @@ function createSharedSymlinks(claudeHome: string, realClaudeHome: string): void 
       link: path.join(claudeHome, 'projects'),
       target: path.join(realClaudeHome, 'projects'),
     },
-    {
-      link: path.join(claudeHome, 'commands'),
-      target: path.join(realClaudeHome, 'commands'),
-    },
   ]
 
   for (const { link, target } of links) {
@@ -153,8 +181,8 @@ function ensureDotfileSymlinks(homePath: string, realHome: string): void {
 // ── Settings generation ──────────────────────────────────────────────────────
 
 /**
- * Build a settings.json object from env.yaml config.
- * Maps env.yaml fields to Claude Code's settings format.
+ * Build a settings.json object purely from env.yaml config.
+ * Only what's explicitly defined in the env ends up in settings.
  */
 function generateSettings(config: EnvConfig): Record<string, unknown> {
   const settings: Record<string, unknown> = {}
@@ -186,6 +214,15 @@ function generateSettings(config: EnvConfig): Record<string, unknown> {
   if (disables.length > 0) {
     settings.disallowedTools = disables
   }
+
+  // enabledPlugins — always set explicitly (empty = no plugins active)
+  const enabledPlugins: Record<string, boolean> = {}
+  if (config.plugins?.enable?.length) {
+    for (const plugin of config.plugins.enable) {
+      enabledPlugins[`${plugin.name}@${plugin.source}`] = true
+    }
+  }
+  settings.enabledPlugins = enabledPlugins
 
   return settings
 }

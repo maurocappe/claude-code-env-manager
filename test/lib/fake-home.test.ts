@@ -204,7 +204,7 @@ describe('buildFakeHome — shared symlinks', () => {
     expect(fs.readlinkSync(projectsLink)).toBe(path.join(realHome, '.claude', 'projects'))
   })
 
-  test('creates commands symlink to real HOME', async () => {
+  test('does not create commands symlink (commands not shared)', async () => {
     const { envDir, cleanup: ec } = createTempEnvDir('cmd-sym')
     envCleanup = ec
     const { realHome, cleanup: hc } = createFakeRealHome()
@@ -213,10 +213,8 @@ describe('buildFakeHome — shared symlinks', () => {
     const config: EnvConfig = { name: 'cmd-sym' }
     const result = await buildFakeHome(config, envDir, realHome)
 
-    const commandsLink = path.join(result.claudeHome, 'commands')
-    const stat = fs.lstatSync(commandsLink)
-    expect(stat.isSymbolicLink()).toBe(true)
-    expect(fs.readlinkSync(commandsLink)).toBe(path.join(realHome, '.claude', 'commands'))
+    const commandsPath = path.join(result.claudeHome, 'commands')
+    expect(fs.existsSync(commandsPath)).toBe(false)
   })
 
   test('creates dotfile symlinks for existing files', async () => {
