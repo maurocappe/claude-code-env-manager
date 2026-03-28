@@ -19,9 +19,12 @@ import {
   scanInstalledSkills,
   scanCurrentSettings,
   scanPluginComponents,
+  scanCurrentHooks,
+  scanStatusLine,
+  scanInstalledCommands,
 } from '../lib/scanner'
 import { validRange } from 'semver'
-import type { EnvConfig, InstalledPlugin, McpServerConfig, PluginRef } from '../types'
+import type { EnvConfig, InstalledPlugin, McpServerConfig, PluginRef, HookConfig, CommandRef } from '../types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -76,20 +79,25 @@ export interface WizardPaths {
   skillsDir?: string
   /** Override for skill-lock.json path (testing) */
   skillLockPath?: string
+  /** Override for ~/.claude/commands/ directory (testing) */
+  commandsDir?: string
 }
 
 /**
  * Interactive creation wizard for `cenv create --wizard`.
  *
  * Flow:
- * 1. intro
- * 2. Plugin multiselect  (with optional per-plugin skill cherry-pick)
- * 3. Standalone skill multiselect
- * 4. MCP server multiselect
- * 5. Settings (import permissions?, effort level)
- * 6. CLAUDE.md source (current / empty)
- * 7. Write files
- * 8. outro summary
+ *  1. Intro
+ *  2. Plugins (with optional per-plugin skill cherry-pick)
+ *  3. Standalone skills
+ *  4. Commands
+ *  5. MCP servers
+ *  6. Hooks
+ *  7. StatusLine
+ *  8. Settings (import permissions?, effort level)
+ *  9. CLAUDE.md source (current / empty)
+ * 10. Write files
+ * 11. Outro summary
  */
 export async function runWizard(
   name: string,
@@ -219,7 +227,29 @@ export async function runWizard(
     selectedStandaloneSkillPaths.push(...(chosen as string[]))
   }
 
-  // ── 4. MCP Servers ──────────────────────────────────────────────────────────
+  // ── 4. Commands ─────────────────────────────────────────────────────────────
+
+  const allCommands = scanInstalledCommands(paths.commandsDir)
+  const selectedCommandPaths: string[] = []
+
+  if (allCommands.length > 0) {
+    const commandOptions = allCommands.map((c) => ({
+      value: c.path,
+      label: pc.bold(c.name),
+      hint: c.description ?? undefined,
+    }))
+
+    const chosen = await multiselect({
+      message: 'Select commands to include:',
+      options: commandOptions,
+      required: false,
+    })
+    abortOnCancel(chosen)
+
+    selectedCommandPaths.push(...(chosen as string[]))
+  }
+
+  // ── 5. MCP Servers ──────────────────────────────────────────────────────────
 
   const allMcpServers = collectMcpServers(settingsPath)
   const selectedMcpServers: Record<string, McpServerConfig> = {}
@@ -244,7 +274,42 @@ export async function runWizard(
     }
   }
 
-  // ── 5. Settings ─────────────────────────────────────────────────────────────
+  // ── 6. Hooks ────────────────────────────────────────────────────────────────
+
+  const currentHooks = scanCurrentHooks(paths.settingsPath)
+  let selectedHooks: Record<string, HookConfig[]> | undefined
+
+  const hookEventNames = Object.keys(currentHooks)
+  if (hookEventNames.length > 0) {
+    const importHooks = await confirm({
+      message: `Import ${hookEventNames.length} hook(s) from current setup? (${hookEventNames.join(', ')})`,
+      initialValue: true,
+    })
+    abortOnCancel(importHooks)
+
+    if (importHooks) {
+      selectedHooks = currentHooks
+    }
+  }
+
+  // ── 7. StatusLine ──────────────────────────────────────────────────────────
+
+  const currentStatusLine = scanStatusLine(paths.settingsPath)
+  let selectedStatusLine: Record<string, unknown> | undefined
+
+  if (currentStatusLine) {
+    const importStatusLine = await confirm({
+      message: 'Import current statusLine configuration?',
+      initialValue: true,
+    })
+    abortOnCancel(importStatusLine)
+
+    if (importStatusLine) {
+      selectedStatusLine = currentStatusLine
+    }
+  }
+
+  // ── 8. Settings ─────────────────────────────────────────────────────────────
 
   const importPerms = await confirm({
     message: 'Import current permissions from settings.json?',
@@ -279,7 +344,7 @@ export async function runWizard(
     }
   }
 
-  // ── 6. CLAUDE.md source ─────────────────────────────────────────────────────
+  // ── 9. CLAUDE.md source ────────────────────────────────────────────────────
 
   const claudeMdChoice = await select({
     message: 'CLAUDE.md source:',
@@ -291,7 +356,7 @@ export async function runWizard(
   })
   abortOnCancel(claudeMdChoice)
 
-  // ── 7. Generate files ────────────────────────────────────────────────────────
+  // ── 10. Generate files ───────────────────────────────────────────────────────
 
   fs.mkdirSync(envDir, { recursive: true })
 
@@ -314,8 +379,16 @@ export async function runWizard(
     config.skills = selectedStandaloneSkillPaths.map((p) => ({ path: p }))
   }
 
+  if (selectedCommandPaths.length > 0) {
+    config.commands = selectedCommandPaths.map((p) => ({ path: p }))
+  }
+
   if (Object.keys(selectedMcpServers).length > 0) {
     config.mcp_servers = selectedMcpServers
+  }
+
+  if (selectedHooks && Object.keys(selectedHooks).length > 0) {
+    config.hooks = selectedHooks
   }
 
   const settingsConfig: EnvConfig['settings'] = {
@@ -323,6 +396,9 @@ export async function runWizard(
   }
   if (allowedPermissions && allowedPermissions.length > 0) {
     settingsConfig.permissions = { allow: allowedPermissions }
+  }
+  if (selectedStatusLine) {
+    settingsConfig.statusLine = selectedStatusLine
   }
   config.settings = settingsConfig
 
@@ -336,15 +412,16 @@ export async function runWizard(
     fs.writeFileSync(destMd, `# Claude Code instructions for ${name}\n`, 'utf8')
   }
 
-  // ── 8. Outro summary ────────────────────────────────────────────────────────
+  // ── 11. Outro summary ───────────────────────────────────────────────────────
 
   const displayPath = envDir.replace(process.env.HOME ?? '', '~')
   const pluginCount = selectedPluginRefs.length
   const skillCount = selectedStandaloneSkillPaths.length
+  const commandCount = selectedCommandPaths.length
   const mcpCount = Object.keys(selectedMcpServers).length
 
   outro(
     `${pc.green('✓')} Created ${pc.cyan(pc.bold(name))} at ${pc.dim(displayPath)}\n` +
-    `  ${pc.dim(`${pluginCount} plugin(s), ${skillCount} standalone skill(s), ${mcpCount} MCP server(s)`)}`
+    `  ${pc.dim(`${pluginCount} plugin(s), ${skillCount} standalone skill(s), ${commandCount} command(s), ${mcpCount} MCP server(s)`)}`
   )
 }
