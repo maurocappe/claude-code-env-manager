@@ -69,17 +69,6 @@ export interface EnvEntry {
   source: 'personal' | 'project'
 }
 
-// ── Session ───────────────────────────────────────────────────────────────────
-
-export interface SessionFiles {
-  dir: string
-  settingsPath: string
-  mcpConfigPath: string
-  claudeMdPath: string
-  pluginDirs: string[]
-  disallowedTools: string[]
-}
-
 // ── Fake HOME ────────────────────────────────────────────────────────────────
 
 export interface FakeHomeResult {

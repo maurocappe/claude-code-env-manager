@@ -9,7 +9,6 @@ export const CENV_HOME = path.join(HOME, '.claude-envs')
 export const ENVS_DIR = path.join(CENV_HOME, 'envs')
 export const AUTH_DIR = path.join(CENV_HOME, 'auth')
 export const CACHE_DIR = path.join(CENV_HOME, 'cache')
-export const SESSIONS_DIR = path.join(CENV_HOME, 'sessions')
 
 // ── Claude Code home ──────────────────────────────────────────────────────────
 
@@ -34,6 +33,3 @@ export const DOTFILE_SYMLINKS = [
   '.npmrc', '.bunfig.toml',
 ] as const
 
-// ── Session temp dir ──────────────────────────────────────────────────────────
-
-export const SESSIONS_TMP_DIR = '/tmp/cenv-sessions'
