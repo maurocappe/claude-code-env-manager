@@ -252,6 +252,29 @@ export async function runWizard(
   // ── 5. MCP Servers ──────────────────────────────────────────────────────────
 
   const allMcpServers = collectMcpServers(settingsPath)
+
+  // Also discover MCP servers bundled with selected plugins
+  for (const plugin of selectedPlugins) {
+    if (!plugin.path) continue
+    const components = scanPluginComponents(plugin.path)
+    for (const serverName of components.mcpServers) {
+      // Read the plugin's .mcp.json for the full server config
+      const mcpJsonPath = path.join(plugin.path, '.mcp.json')
+      try {
+        const raw = JSON.parse(fs.readFileSync(mcpJsonPath, 'utf8'))
+        if (raw?.mcpServers?.[serverName]) {
+          // Add with plugin prefix to distinguish from standalone MCPs
+          const key = `${plugin.name}:${serverName}`
+          if (!allMcpServers[key]) {
+            allMcpServers[key] = raw.mcpServers[serverName] as McpServerConfig
+          }
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+  }
+
   const selectedMcpServers: Record<string, McpServerConfig> = {}
 
   const mcpNames = Object.keys(allMcpServers)
