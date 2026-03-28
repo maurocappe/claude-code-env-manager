@@ -17,13 +17,12 @@ describe('Environment Lifecycle', () => {
     ctx.cleanup()
   })
 
-  test('ensureCenvHome creates envs/, auth/, cache/, sessions/ subdirs', () => {
+  test('ensureCenvHome creates envs/, auth/, cache/ subdirs', () => {
     ensureCenvHome(ctx.cenvHome)
 
     expect(fs.existsSync(path.join(ctx.cenvHome, 'envs'))).toBe(true)
     expect(fs.existsSync(path.join(ctx.cenvHome, 'auth'))).toBe(true)
     expect(fs.existsSync(path.join(ctx.cenvHome, 'cache'))).toBe(true)
-    expect(fs.existsSync(path.join(ctx.cenvHome, 'sessions'))).toBe(true)
   })
 
   test('createEnvDir creates env.yaml and claude.md', () => {

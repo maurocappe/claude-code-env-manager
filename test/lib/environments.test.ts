@@ -27,7 +27,6 @@ describe('ensureCenvHome', () => {
     expect(fs.existsSync(tmp.envsDir)).toBe(true)
     expect(fs.existsSync(tmp.authDir)).toBe(true)
     expect(fs.existsSync(tmp.cacheDir)).toBe(true)
-    expect(fs.existsSync(tmp.sessionsDir)).toBe(true)
   })
 
   test('creates .gitignore in auth/ that ignores all files', () => {

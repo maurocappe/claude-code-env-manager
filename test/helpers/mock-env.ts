@@ -11,7 +11,6 @@ export function createTempCenvHome(): {
   envsDir: string
   authDir: string
   cacheDir: string
-  sessionsDir: string
   cleanup: () => void
 } {
   const cenvHome = fs.mkdtempSync(
@@ -22,7 +21,6 @@ export function createTempCenvHome(): {
     envsDir: path.join(cenvHome, 'envs'),
     authDir: path.join(cenvHome, 'auth'),
     cacheDir: path.join(cenvHome, 'cache'),
-    sessionsDir: path.join(cenvHome, 'sessions'),
     cleanup() {
       fs.rmSync(cenvHome, { recursive: true, force: true })
     },

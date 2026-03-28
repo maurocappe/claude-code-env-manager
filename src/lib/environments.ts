@@ -21,7 +21,7 @@ export function validateName(name: string): void {
 
 /**
  * Ensure the ~/.claude-envs/ directory structure exists.
- * Creates: envs/, auth/, cache/, sessions/
+ * Creates: envs/, auth/, cache/
  * Creates .gitignore in auth/ that ignores all files.
  * Safe to call multiple times (idempotent).
  *
@@ -31,12 +31,10 @@ export function ensureCenvHome(cenvHome: string = CENV_HOME): void {
   const envsDir = path.join(cenvHome, 'envs')
   const authDir = path.join(cenvHome, 'auth')
   const cacheDir = path.join(cenvHome, 'cache')
-  const sessionsDir = path.join(cenvHome, 'sessions')
 
   fs.mkdirSync(envsDir, { recursive: true })
   fs.mkdirSync(authDir, { recursive: true })
   fs.mkdirSync(cacheDir, { recursive: true })
-  fs.mkdirSync(sessionsDir, { recursive: true })
 
   // Create .gitignore in auth/ to protect secrets from accidental commits.
   // Only write it if it doesn't already exist (idempotent, preserves mtime).
@@ -144,6 +142,3 @@ export function getCachePath(cenvHome: string = CENV_HOME): string {
   return path.join(cenvHome, 'cache')
 }
 
-export function getSessionsPath(cenvHome: string = CENV_HOME): string {
-  return path.join(cenvHome, 'sessions')
-}

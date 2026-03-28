@@ -17,7 +17,6 @@ export async function runInit(cenvHome: string = CENV_HOME): Promise<void> {
       `${tick} Created envs/`,
       `${tick} Created auth/ ${pc.dim('(gitignored)')}`,
       `${tick} Created cache/`,
-      `${tick} Created sessions/`,
     ].join('\n')
   )
 
