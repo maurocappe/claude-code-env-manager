@@ -179,7 +179,6 @@ describe('E2E Infrastructure', () => {
     const config = parse(fs.readFileSync(envYamlPath, 'utf8'))
 
     expect(config.name).toBe('team-env')
-    expect(config.isolation).toBe('additive')
     expect(config.plugins.enable[0].name).toBe('superpowers')
     expect(config.plugins.disable).toContain('superpowers:brainstorming')
     expect(config.mcp_servers['test-server'].command).toBe('echo')

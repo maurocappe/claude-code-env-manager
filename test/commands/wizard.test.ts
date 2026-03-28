@@ -332,6 +332,65 @@ describe('runWizard — plugins selected', () => {
   })
 })
 
+describe('runWizard — invalid plugin versions', () => {
+  let cleanupCenvHome: () => void
+  let cleanupPluginsDir: () => void
+  let spies: ClackSpies
+
+  afterEach(() => {
+    cleanupCenvHome?.()
+    cleanupPluginsDir?.()
+    spies?.restoreAll()
+  })
+
+  test('omits version from env.yaml when plugin has non-semver version like "unknown"', async () => {
+    const tmp = createTempCenvHome()
+    cleanupCenvHome = tmp.cleanup
+    ensureCenvHome(tmp.cenvHome)
+
+    const pluginsDir = fs.mkdtempSync('/tmp/cenv-wizard-badver-')
+    cleanupPluginsDir = () => fs.rmSync(pluginsDir, { recursive: true, force: true })
+
+    const pluginPath = createFixturePlugin(pluginsDir, 'bad-version-plugin', {
+      skills: ['some-skill'],
+    })
+
+    const pluginsJsonPath = path.join(tmp.cenvHome, 'installed_plugins.json')
+    writeInstalledPlugins(pluginsJsonPath, [
+      { name: 'bad-version-plugin', source: 'marketplace', version: 'unknown', path: pluginPath },
+    ])
+
+    const settingsPath = path.join(tmp.cenvHome, 'settings.json')
+    fs.writeFileSync(settingsPath, JSON.stringify({}), 'utf8')
+
+    spies = mockClack({
+      multiselect: [['bad-version-plugin']],
+      confirm: [false, false],
+      select: ['high', 'empty'],
+    })
+
+    await runWizard('badver-env', {
+      cenvHome: tmp.cenvHome,
+      installedPluginsPath: pluginsJsonPath,
+      skillsDir: path.join(tmp.cenvHome, 'skills'),
+      settingsPath,
+    })
+
+    const envDir = path.join(tmp.cenvHome, 'envs', 'badver-env')
+    const yamlContent = fs.readFileSync(path.join(envDir, 'env.yaml'), 'utf8')
+
+    // The "unknown" version should NOT appear in the generated env.yaml
+    expect(yamlContent).not.toContain('unknown')
+    // But the plugin should still be there
+    expect(yamlContent).toContain('bad-version-plugin')
+    expect(yamlContent).toContain('marketplace')
+
+    // And loadEnvConfig should not throw
+    const { loadEnvConfig } = await import('@/lib/config')
+    expect(() => loadEnvConfig(envDir)).not.toThrow()
+  })
+})
+
 describe('runWizard — CLAUDE.md handling', () => {
   let cleanupCenvHome: () => void
   let spies: ClackSpies
@@ -467,3 +526,4 @@ describe('runWizard — MCP servers', () => {
     expect(yamlContent).not.toContain('github')
   })
 })
+

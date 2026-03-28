@@ -3,7 +3,6 @@
 export interface EnvConfig {
   name: string
   description?: string
-  isolation?: 'bare' | 'additive'
   plugins?: {
     enable?: PluginRef[]
     disable?: string[]
@@ -78,6 +77,14 @@ export interface SessionFiles {
   mcpConfigPath: string
   claudeMdPath: string
   pluginDirs: string[]
+  disallowedTools: string[]
+}
+
+// ── Fake HOME ────────────────────────────────────────────────────────────────
+
+export interface FakeHomeResult {
+  homePath: string
+  claudeHome: string
 }
 
 // ── Scanner ───────────────────────────────────────────────────────────────────

@@ -46,7 +46,6 @@ describe('Add + Diff', () => {
     const envDirA = createEnvDir('env-a', ctx.cenvHome)
     writeEnvConfig(envDirA, {
       name: 'env-a',
-      isolation: 'additive',
       settings: { effortLevel: 'low' },
     })
 

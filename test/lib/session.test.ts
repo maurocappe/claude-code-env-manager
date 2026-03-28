@@ -144,6 +144,163 @@ describe('createSession', () => {
   })
 })
 
+describe('createSession — skill disable behavior', () => {
+  let tmpDir: string
+  let envDir: string
+  let sessionsDir: string
+  let pluginsBaseDir: string
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cenv-bare-test-'))
+    envDir = path.join(tmpDir, 'env')
+    sessionsDir = path.join(tmpDir, 'sessions')
+    pluginsBaseDir = path.join(tmpDir, 'plugins-cache')
+    fs.mkdirSync(envDir, { recursive: true })
+    fs.writeFileSync(path.join(envDir, 'claude.md'), '# Test\n', 'utf8')
+  })
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  function createPluginFixture(name: string, source: string, version: string, skills: string[]): string {
+    const pluginDir = path.join(pluginsBaseDir, source, name, version)
+    for (const skill of skills) {
+      const skillDir = path.join(pluginDir, 'skills', skill)
+      fs.mkdirSync(skillDir, { recursive: true })
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `# ${skill}\n`, 'utf8')
+    }
+    return pluginDir
+  }
+
+  function writePluginsJson(filePath: string, plugins: Array<{ name: string; source: string; version: string; path: string }>) {
+    const data: Record<string, unknown> = { version: 2, plugins: {} }
+    const pluginsObj = data.plugins as Record<string, unknown>
+    for (const p of plugins) {
+      pluginsObj[`${p.name}@${p.source}`] = [{ scope: 'user', installPath: p.path, version: p.version }]
+    }
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, JSON.stringify(data), 'utf8')
+  }
+
+  test('does not auto-disable skills from non-selected plugins (bare mode removed)', async () => {
+    const superpowersPath = createPluginFixture('superpowers', 'official', '5.0.6', ['tdd', 'debugging', 'brainstorming'])
+    const claudeMemPath = createPluginFixture('claude-mem', 'thedotmack', '10.6.2', ['mem-search', 'do'])
+
+    const installedPluginsPath = path.join(tmpDir, 'installed_plugins.json')
+    writePluginsJson(installedPluginsPath, [
+      { name: 'superpowers', source: 'official', version: '5.0.6', path: superpowersPath },
+      { name: 'claude-mem', source: 'thedotmack', version: '10.6.2', path: claudeMemPath },
+    ])
+
+    // Env only enables claude-mem, not superpowers
+    const config: EnvConfig = {
+      name: 'bare-env',
+      plugins: {
+        enable: [{ name: 'claude-mem', source: 'thedotmack' }],
+      },
+    }
+
+    const session = await createSession(config, envDir, sessionsDir, { installedPluginsPath })
+
+    // No auto-computed disables — bare isolation mode was removed
+    expect(session.disallowedTools).toEqual([])
+  })
+
+  test('explicit disable list still works without bare mode', async () => {
+    const claudeMemPath = createPluginFixture('claude-mem', 'thedotmack', '10.6.2', ['mem-search', 'do', 'timeline'])
+
+    const installedPluginsPath = path.join(tmpDir, 'installed_plugins.json')
+    writePluginsJson(installedPluginsPath, [
+      { name: 'claude-mem', source: 'thedotmack', version: '10.6.2', path: claudeMemPath },
+    ])
+
+    // Enable claude-mem but explicitly disable timeline skill
+    const config: EnvConfig = {
+      name: 'mixed-env',
+      plugins: {
+        enable: [{ name: 'claude-mem', source: 'thedotmack' }],
+        disable: ['claude-mem:timeline'],
+      },
+    }
+
+    const session = await createSession(config, envDir, sessionsDir, { installedPluginsPath })
+    const settings = JSON.parse(fs.readFileSync(session.settingsPath, 'utf8'))
+
+    // Explicit disable should be present
+    expect(settings.disallowedTools).toContain('Skill(claude-mem:timeline)')
+    // Other claude-mem skills should NOT be disabled
+    expect(settings.disallowedTools).not.toContain('Skill(claude-mem:mem-search)')
+    expect(settings.disallowedTools).not.toContain('Skill(claude-mem:do)')
+  })
+
+  test('no auto-disables when no explicit disables configured', async () => {
+    const superpowersPath = createPluginFixture('superpowers', 'official', '5.0.6', ['tdd', 'debugging'])
+
+    const installedPluginsPath = path.join(tmpDir, 'installed_plugins.json')
+    writePluginsJson(installedPluginsPath, [
+      { name: 'superpowers', source: 'official', version: '5.0.6', path: superpowersPath },
+    ])
+
+    const config: EnvConfig = {
+      name: 'additive-env',
+      plugins: { enable: [] },
+    }
+
+    const session = await createSession(config, envDir, sessionsDir, { installedPluginsPath })
+    const settings = JSON.parse(fs.readFileSync(session.settingsPath, 'utf8'))
+
+    // No skills should be auto-disabled
+    expect(settings.disallowedTools).toBeUndefined()
+  })
+
+  test('no synthetic plugin dir created (bare mode removed)', async () => {
+    const installedPluginsPath = path.join(tmpDir, 'installed_plugins.json')
+    writePluginsJson(installedPluginsPath, [])
+
+    // Create a real standalone skill directory
+    const skillsDir = path.join(tmpDir, 'standalone-skills')
+    const skillDir = path.join(skillsDir, 'my-skill')
+    fs.mkdirSync(skillDir, { recursive: true })
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# my-skill\n', 'utf8')
+
+    const config: EnvConfig = {
+      name: 'synth-env',
+      skills: [{ path: skillDir }],
+    }
+
+    const session = await createSession(config, envDir, sessionsDir, { installedPluginsPath, skillsDir })
+
+    // No synthetic plugin dir should be created (bare mode removed)
+    const synthDir = session.pluginDirs.find(d => d.includes('standalone-skills'))
+    expect(synthDir).toBeUndefined()
+  })
+
+  test('no auto-disable of standalone skills (bare mode removed)', async () => {
+    const installedPluginsPath = path.join(tmpDir, 'installed_plugins.json')
+    writePluginsJson(installedPluginsPath, [])
+
+    // Create standalone skills
+    const skillsDir = path.join(tmpDir, 'standalone-skills')
+    for (const skill of ['swarm-planning', 'skill-creator', 'find-skills']) {
+      const dir = path.join(skillsDir, skill)
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(path.join(dir, 'SKILL.md'), `# ${skill}\n`, 'utf8')
+    }
+
+    // Env only includes swarm-planning
+    const config: EnvConfig = {
+      name: 'standalone-env',
+      skills: [{ path: path.join(skillsDir, 'swarm-planning') }],
+    }
+
+    const session = await createSession(config, envDir, sessionsDir, { installedPluginsPath, skillsDir })
+
+    // No auto-disables — bare isolation mode was removed
+    expect(session.disallowedTools).toEqual([])
+  })
+})
+
 describe('cleanupStaleSessions', () => {
   let tmpDir: string
 

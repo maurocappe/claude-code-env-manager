@@ -133,7 +133,6 @@ export function snapshotCurrentSetup(
   const config: EnvConfig = {
     name: envName,
     description: 'Snapshot of current Claude Code setup',
-    isolation: 'additive',
     ...(pluginRefs.length > 0 ? { plugins: { enable: pluginRefs } } : {}),
     ...(skillRefs.length > 0 ? { skills: skillRefs } : {}),
     ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcp_servers: mcpServers } : {}),

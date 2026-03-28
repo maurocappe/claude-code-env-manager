@@ -20,6 +20,7 @@ import {
   scanCurrentSettings,
   scanPluginComponents,
 } from '../lib/scanner'
+import { validRange } from 'semver'
 import type { EnvConfig, InstalledPlugin, McpServerConfig, PluginRef } from '../types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -139,7 +140,7 @@ export async function runWizard(
     // Cherry-pick: offer "Customize?" for each selected plugin
     for (const plugin of selectedPlugins) {
       const ref: PluginRef = { name: plugin.name, source: plugin.source }
-      if (plugin.version) ref.version = plugin.version
+      if (plugin.version && validRange(plugin.version) !== null) ref.version = plugin.version
       selectedPluginRefs.push(ref)
 
       // Only offer customization if the plugin has a valid path
@@ -297,7 +298,6 @@ export async function runWizard(
   // Build env.yaml config
   const config: EnvConfig = {
     name,
-    isolation: 'additive',
   }
 
   if (selectedPluginRefs.length > 0 || disabledSkills.length > 0) {

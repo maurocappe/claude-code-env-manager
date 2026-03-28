@@ -9,6 +9,7 @@ function makeSession(overrides?: Partial<SessionFiles>): SessionFiles {
     mcpConfigPath: '/tmp/cenv-sessions/test-1234/mcp.json',
     claudeMdPath: '/home/user/.claude-envs/envs/test/claude.md',
     pluginDirs: [],
+    disallowedTools: [],
     ...overrides,
   }
 }
@@ -30,14 +31,14 @@ describe('assembleClaudeArgs', () => {
     expect(args).not.toContain('--strict-mcp-config')
   })
 
-  test('adds --bare and --strict-mcp-config in bare mode', () => {
-    const config: EnvConfig = { name: 'test', isolation: 'bare' }
+  test('never adds --bare or --strict-mcp-config (isolation dropped)', () => {
+    const config: EnvConfig = { name: 'test' }
     const session = makeSession()
 
     const args = assembleClaudeArgs(session, config)
 
-    expect(args).toContain('--bare')
-    expect(args).toContain('--strict-mcp-config')
+    expect(args).not.toContain('--bare')
+    expect(args).not.toContain('--strict-mcp-config')
   })
 
   test('adds --plugin-dir for each plugin directory', () => {
@@ -67,8 +68,30 @@ describe('assembleClaudeArgs', () => {
     expect(args[args.length - 1]).toBe('fix the bug')
   })
 
+  test('includes --disallowed-tools when session has disallowedTools', () => {
+    const config: EnvConfig = { name: 'test' }
+    const session = makeSession({
+      disallowedTools: ['Skill(superpowers:brainstorming)', 'Skill(claude-mem:do)'],
+    })
+
+    const args = assembleClaudeArgs(session, config)
+
+    expect(args).toContain('--disallowed-tools')
+    expect(args).toContain('Skill(superpowers:brainstorming)')
+    expect(args).toContain('Skill(claude-mem:do)')
+  })
+
+  test('omits --disallowed-tools when list is empty', () => {
+    const config: EnvConfig = { name: 'test' }
+    const session = makeSession({ disallowedTools: [] })
+
+    const args = assembleClaudeArgs(session, config)
+
+    expect(args).not.toContain('--disallowed-tools')
+  })
+
   test('correct flag ordering: settings before plugins before mcp before prompt', () => {
-    const config: EnvConfig = { name: 'test', isolation: 'bare' }
+    const config: EnvConfig = { name: 'test' }
     const session = makeSession({ pluginDirs: ['/path/to/plugin'] })
 
     const args = assembleClaudeArgs(session, config)

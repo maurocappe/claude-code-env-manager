@@ -101,7 +101,7 @@ describe('createEnvDir', () => {
     const parsed = parse(raw)
 
     expect(parsed.name).toBe('test-env')
-    expect(parsed.isolation).toBe('additive')
+    expect(parsed.isolation).toBeUndefined()
   })
 
   test('scaffold creates claude.md with a comment header', () => {

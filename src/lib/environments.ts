@@ -70,7 +70,6 @@ export function createEnvDir(name: string, cenvHome: string = CENV_HOME): string
   writeEnvConfig(envDir, {
     name,
     description: '',
-    isolation: 'additive',
   })
 
   // Empty claude.md with comment header

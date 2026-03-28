@@ -3,6 +3,12 @@ import path from 'node:path'
 import { SESSIONS_TMP_DIR, CLAUDE_PLUGINS_DIR, CACHE_DIR } from '../constants'
 import type { EnvConfig, SessionFiles } from '../types'
 import { keychainRead } from './keychain'
+// scanner imports removed — bare-mode skill computation dropped
+
+interface SessionCreateOptions {
+  installedPluginsPath?: string
+  skillsDir?: string
+}
 
 /**
  * Create a temporary session directory with generated config files
@@ -13,7 +19,8 @@ import { keychainRead } from './keychain'
 export async function createSession(
   config: EnvConfig,
   envDir: string,
-  sessionsDir: string = SESSIONS_TMP_DIR
+  sessionsDir: string = SESSIONS_TMP_DIR,
+  opts: SessionCreateOptions = {}
 ): Promise<SessionFiles> {
   const sessionName = `${config.name}-${process.pid}`
   const dir = path.join(sessionsDir, sessionName)
@@ -35,7 +42,10 @@ export async function createSession(
   // Resolve plugin directories
   const pluginDirs = resolvePluginDirs(config)
 
-  return { dir, settingsPath, mcpConfigPath, claudeMdPath, pluginDirs }
+  // Collect disallowedTools for CLI flags
+  const disallowedTools = (settings.disallowedTools as string[] ?? [])
+
+  return { dir, settingsPath, mcpConfigPath, claudeMdPath, pluginDirs, disallowedTools }
 }
 
 /**
@@ -68,8 +78,10 @@ function buildSettings(config: EnvConfig): Record<string, unknown> {
   }
 
   // Map disabled skills to disallowedTools
-  if (config.plugins?.disable?.length) {
-    settings.disallowedTools = config.plugins.disable.map(skill => `Skill(${skill})`)
+  const explicitDisables = (config.plugins?.disable ?? []).map(skill => `Skill(${skill})`)
+
+  if (explicitDisables.length > 0) {
+    settings.disallowedTools = explicitDisables
   }
 
   return settings

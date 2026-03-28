@@ -33,7 +33,6 @@ function buildSummary(
 ): string[] {
   const sourceLabel =
     source === 'personal' ? pc.blue('personal') : pc.magenta('project')
-  const isolationLabel = config.isolation ?? 'additive'
 
   const pluginsEnabled = config.plugins?.enable?.length ?? 0
   const pluginsDisabled = config.plugins?.disable?.length ?? 0
@@ -53,7 +52,6 @@ function buildSummary(
     lines.push(`  ${pc.dim('description')}  ${config.description}`)
   }
 
-  lines.push(`  ${pc.dim('isolation')}    ${isolationLabel}`)
   lines.push(`  ${pc.dim('path')}         ${pc.dim(displayPath)}`)
   lines.push('')
 

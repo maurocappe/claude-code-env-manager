@@ -17,7 +17,6 @@ describe('loadEnvConfig', () => {
     const tmp = createTempEnvDir(`
 name: my-env
 description: A test environment
-isolation: bare
 plugins:
   enable:
     - name: superpowers
@@ -47,7 +46,6 @@ settings:
 
     expect(config.name).toBe('my-env')
     expect(config.description).toBe('A test environment')
-    expect(config.isolation).toBe('bare')
     expect(config.plugins?.enable).toHaveLength(1)
     expect(config.plugins?.enable?.[0].name).toBe('superpowers')
     expect(config.plugins?.enable?.[0].version).toBe('^5.0.0')
@@ -67,7 +65,6 @@ settings:
 
     expect(config.name).toBe('minimal-env')
     expect(config.description).toBeUndefined()
-    expect(config.isolation).toBeUndefined()
     expect(config.plugins).toBeUndefined()
   })
 
@@ -159,7 +156,6 @@ describe('writeEnvConfig', () => {
     const original = {
       name: 'roundtrip-env',
       description: 'A roundtrip test',
-      isolation: 'additive' as const,
       plugins: {
         enable: [{ name: 'superpowers', source: 'github:anthropics/superpowers', version: '^5.0.0' }],
         disable: ['superpowers:brainstorming'],
@@ -175,7 +171,6 @@ describe('writeEnvConfig', () => {
 
     expect(loaded.name).toBe(original.name)
     expect(loaded.description).toBe(original.description)
-    expect(loaded.isolation).toBe(original.isolation)
     expect(loaded.plugins?.enable?.[0].name).toBe('superpowers')
     expect(loaded.plugins?.disable).toEqual(['superpowers:brainstorming'])
     expect(loaded.settings?.effortLevel).toBe('high')

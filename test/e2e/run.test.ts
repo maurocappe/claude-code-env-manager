@@ -28,8 +28,9 @@ describe('Run Engine', () => {
       mcpConfigPath: '/tmp/test-session/mcp.json',
       claudeMdPath: '/tmp/test-session/claude.md',
       pluginDirs: [],
+      disallowedTools: [],
     }
-    const config: EnvConfig = { name: 'test-env', isolation: 'additive' }
+    const config: EnvConfig = { name: 'test-env' }
 
     const args = assembleClaudeArgs(session, config)
 
@@ -38,20 +39,21 @@ describe('Run Engine', () => {
     expect(args).toContain('--settings')
   })
 
-  test('assembleClaudeArgs in bare mode: includes --bare and --strict-mcp-config', () => {
+  test('assembleClaudeArgs never adds --bare or --strict-mcp-config (isolation dropped)', () => {
     const session: SessionFiles = {
       dir: '/tmp/test-session',
       settingsPath: '/tmp/test-session/settings.json',
       mcpConfigPath: '/tmp/test-session/mcp.json',
       claudeMdPath: '/tmp/test-session/claude.md',
       pluginDirs: [],
+      disallowedTools: [],
     }
-    const config: EnvConfig = { name: 'bare-env', isolation: 'bare' }
+    const config: EnvConfig = { name: 'bare-env' }
 
     const args = assembleClaudeArgs(session, config)
 
-    expect(args).toContain('--bare')
-    expect(args).toContain('--strict-mcp-config')
+    expect(args).not.toContain('--bare')
+    expect(args).not.toContain('--strict-mcp-config')
   })
 
   test('assembleClaudeArgs with plugin dirs: --plugin-dir flags present', () => {
@@ -61,8 +63,9 @@ describe('Run Engine', () => {
       mcpConfigPath: '/tmp/test-session/mcp.json',
       claudeMdPath: '/tmp/test-session/claude.md',
       pluginDirs: ['/path/to/plugin-a', '/path/to/plugin-b'],
+      disallowedTools: [],
     }
-    const config: EnvConfig = { name: 'plugin-env', isolation: 'additive' }
+    const config: EnvConfig = { name: 'plugin-env' }
 
     const args = assembleClaudeArgs(session, config)
 
@@ -80,7 +83,6 @@ describe('Run Engine', () => {
     const envDir = createEnvDir('skills-env', ctx.cenvHome)
     const config: EnvConfig = {
       name: 'skills-env',
-      isolation: 'additive',
       plugins: {
         disable: ['superpowers:brainstorming', 'superpowers:test-driven-development'],
       },
@@ -99,7 +101,6 @@ describe('Run Engine', () => {
     const envDir = createEnvDir('mcp-env', ctx.cenvHome)
     const config: EnvConfig = {
       name: 'mcp-env',
-      isolation: 'additive',
       mcp_servers: {
         'my-server': { command: 'echo', args: ['hello'] },
         'another-server': { command: 'cat' },
@@ -120,7 +121,6 @@ describe('Run Engine', () => {
     const envDir = createEnvDir('hooks-env', ctx.cenvHome)
     const config: EnvConfig = {
       name: 'hooks-env',
-      isolation: 'additive',
       hooks: {
         PostToolUse: [{ command: 'echo "tool used"' }],
         Stop: [{ command: 'echo "stopped"' }],

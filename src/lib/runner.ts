@@ -12,11 +12,6 @@ export function assembleClaudeArgs(
 ): string[] {
   const args: string[] = []
 
-  // Isolation mode
-  if (config.isolation === 'bare') {
-    args.push('--bare')
-  }
-
   // Settings
   args.push('--settings', session.settingsPath)
 
@@ -25,15 +20,17 @@ export function assembleClaudeArgs(
     args.push('--plugin-dir', dir)
   }
 
-  // MCP config — use strict in bare mode for full isolation
-  if (config.isolation === 'bare') {
-    args.push('--strict-mcp-config')
-  }
+  // MCP config
   args.push('--mcp-config', session.mcpConfigPath)
 
   // Claude.md — append to system prompt
   if (session.claudeMdPath) {
     args.push('--append-system-prompt-file', session.claudeMdPath)
+  }
+
+  // Disallowed tools — pass via CLI flags for enforcement
+  if (session.disallowedTools.length > 0) {
+    args.push('--disallowed-tools', ...session.disallowedTools)
   }
 
   // Pass-through args (everything after --)
