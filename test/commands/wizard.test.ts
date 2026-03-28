@@ -527,3 +527,157 @@ describe('runWizard — MCP servers', () => {
   })
 })
 
+describe('runWizard — commands selection', () => {
+  let cleanupCenvHome: () => void
+  let spies: ClackSpies
+
+  afterEach(() => {
+    cleanupCenvHome?.()
+    spies?.restoreAll()
+  })
+
+  test('includes selected commands in env.yaml', async () => {
+    const tmp = createTempCenvHome()
+    cleanupCenvHome = tmp.cleanup
+    ensureCenvHome(tmp.cenvHome)
+
+    // Create commands dir with test commands
+    const commandsDir = path.join(tmp.cenvHome, 'commands')
+    fs.mkdirSync(commandsDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(commandsDir, 'deploy.md'),
+      '---\ndescription: Deploy to prod\n---\n# Deploy\n',
+      'utf8'
+    )
+    fs.writeFileSync(
+      path.join(commandsDir, 'review.md'),
+      '# Review\nReview code\n',
+      'utf8'
+    )
+
+    const emptyPluginsPath = path.join(tmp.cenvHome, 'installed_plugins.json')
+    fs.writeFileSync(emptyPluginsPath, JSON.stringify({ version: 2, plugins: {} }), 'utf8')
+
+    const settingsPath = path.join(tmp.cenvHome, 'settings.json')
+    fs.writeFileSync(settingsPath, JSON.stringify({}), 'utf8')
+
+    // Mock: no plugins → no standalone skills → commands picker (select deploy only)
+    // → no MCP → no hooks → no statusLine → import perms? no → effort=high → claude.md=empty
+    spies = mockClack({
+      multiselect: [[path.join(commandsDir, 'deploy.md')]],  // select deploy command
+      confirm: [false],   // import permissions? no
+      select: ['high', 'empty'],
+    })
+
+    await runWizard('cmd-env', {
+      cenvHome: tmp.cenvHome,
+      installedPluginsPath: emptyPluginsPath,
+      skillsDir: path.join(tmp.cenvHome, 'skills'),
+      settingsPath,
+      commandsDir,
+    })
+
+    const envDir = path.join(tmp.cenvHome, 'envs', 'cmd-env')
+    const yamlContent = fs.readFileSync(path.join(envDir, 'env.yaml'), 'utf8')
+
+    expect(yamlContent).toContain('deploy.md')
+    expect(yamlContent).not.toContain('review.md')
+    expect(yamlContent).toContain('commands')
+  })
+})
+
+describe('runWizard — hooks import', () => {
+  let cleanupCenvHome: () => void
+  let spies: ClackSpies
+
+  afterEach(() => {
+    cleanupCenvHome?.()
+    spies?.restoreAll()
+  })
+
+  test('includes hooks when user confirms import', async () => {
+    const tmp = createTempCenvHome()
+    cleanupCenvHome = tmp.cleanup
+    ensureCenvHome(tmp.cenvHome)
+
+    const emptyPluginsPath = path.join(tmp.cenvHome, 'installed_plugins.json')
+    fs.writeFileSync(emptyPluginsPath, JSON.stringify({ version: 2, plugins: {} }), 'utf8')
+
+    // Settings with hooks in Claude Code format
+    const settingsPath = path.join(tmp.cenvHome, 'settings.json')
+    fs.writeFileSync(settingsPath, JSON.stringify({
+      hooks: {
+        Stop: [{ hooks: [{ type: 'command', command: 'echo stopped' }] }],
+      },
+    }), 'utf8')
+
+    // Mock: no plugins → no skills → no commands → no MCP
+    // → hooks confirm (yes) → no statusLine → import perms? no → effort=high → claude.md=empty
+    spies = mockClack({
+      multiselect: [],
+      confirm: [true, false],   // import hooks=yes, import permissions=no
+      select: ['high', 'empty'],
+    })
+
+    await runWizard('hooks-env', {
+      cenvHome: tmp.cenvHome,
+      installedPluginsPath: emptyPluginsPath,
+      skillsDir: path.join(tmp.cenvHome, 'skills'),
+      settingsPath,
+    })
+
+    const envDir = path.join(tmp.cenvHome, 'envs', 'hooks-env')
+    const yamlContent = fs.readFileSync(path.join(envDir, 'env.yaml'), 'utf8')
+
+    expect(yamlContent).toContain('hooks')
+    expect(yamlContent).toContain('echo stopped')
+    expect(yamlContent).toContain('Stop')
+  })
+})
+
+describe('runWizard — statusLine import', () => {
+  let cleanupCenvHome: () => void
+  let spies: ClackSpies
+
+  afterEach(() => {
+    cleanupCenvHome?.()
+    spies?.restoreAll()
+  })
+
+  test('includes statusLine when user confirms import', async () => {
+    const tmp = createTempCenvHome()
+    cleanupCenvHome = tmp.cleanup
+    ensureCenvHome(tmp.cenvHome)
+
+    const emptyPluginsPath = path.join(tmp.cenvHome, 'installed_plugins.json')
+    fs.writeFileSync(emptyPluginsPath, JSON.stringify({ version: 2, plugins: {} }), 'utf8')
+
+    // Settings with statusLine
+    const settingsPath = path.join(tmp.cenvHome, 'settings.json')
+    fs.writeFileSync(settingsPath, JSON.stringify({
+      statusLine: { type: 'command', command: 'echo status' },
+    }), 'utf8')
+
+    // Mock: no plugins → no skills → no commands → no MCP
+    // → no hooks → statusLine confirm (yes) → import perms? no → effort=high → claude.md=empty
+    spies = mockClack({
+      multiselect: [],
+      confirm: [true, false],   // import statusLine=yes, import permissions=no
+      select: ['high', 'empty'],
+    })
+
+    await runWizard('status-env', {
+      cenvHome: tmp.cenvHome,
+      installedPluginsPath: emptyPluginsPath,
+      skillsDir: path.join(tmp.cenvHome, 'skills'),
+      settingsPath,
+    })
+
+    const envDir = path.join(tmp.cenvHome, 'envs', 'status-env')
+    const yamlContent = fs.readFileSync(path.join(envDir, 'env.yaml'), 'utf8')
+
+    expect(yamlContent).toContain('statusLine')
+    expect(yamlContent).toContain('echo status')
+  })
+})
+
