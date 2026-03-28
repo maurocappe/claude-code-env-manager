@@ -822,6 +822,43 @@ describe('buildFakeHome — hooks directory symlinks', () => {
     expect(fs.existsSync(hooksDir)).toBe(false)
   })
 
+  test('clears stale hook symlinks on regeneration', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('hooks-stale')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // Create two hook scripts in the real HOME hooks dir
+    const realHooksDir = path.join(realHome, '.claude', 'hooks')
+    fs.mkdirSync(realHooksDir, { recursive: true })
+    fs.writeFileSync(path.join(realHooksDir, 'notify.sh'), '#!/bin/sh\necho ok\n', 'utf8')
+    fs.writeFileSync(path.join(realHooksDir, 'lint.sh'), '#!/bin/sh\necho lint\n', 'utf8')
+
+    // First build: both hook scripts get symlinked
+    const config: EnvConfig = {
+      name: 'hooks-stale',
+      hooks: {
+        Stop: [{ command: '~/.claude/hooks/notify.sh' }],
+      },
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const hooksDir = path.join(result.claudeHome, 'hooks')
+    let entries = fs.readdirSync(hooksDir)
+    expect(entries).toContain('notify.sh')
+    expect(entries).toContain('lint.sh')
+
+    // Simulate removing lint.sh from the real hooks dir between runs
+    fs.unlinkSync(path.join(realHooksDir, 'lint.sh'))
+
+    // Second build: stale lint.sh symlink should be cleared
+    await buildFakeHome(config, envDir, realHome)
+
+    entries = fs.readdirSync(hooksDir)
+    expect(entries).toContain('notify.sh')
+    expect(entries).not.toContain('lint.sh')
+  })
+
   test('handles missing real hooks dir gracefully', async () => {
     const { envDir, cleanup: ec } = createTempEnvDir('hooks-no-real')
     envCleanup = ec

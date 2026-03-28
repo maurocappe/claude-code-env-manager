@@ -131,6 +131,14 @@ export async function buildFakeHome(
   if (config.hooks && Object.keys(config.hooks).length > 0) {
     const hooksDir = path.join(claudeHome, 'hooks')
     fs.mkdirSync(hooksDir, { recursive: true })
+    // Clear existing symlinks (prevents stale hooks from prior runs)
+    try {
+      for (const entry of fs.readdirSync(hooksDir)) {
+        const p = path.join(hooksDir, entry)
+        if (fs.lstatSync(p).isSymbolicLink()) fs.unlinkSync(p)
+      }
+    } catch { /* empty dir — fine */ }
+    // Recreate from real hooks dir
     const realHooksDir = path.join(realClaudeHome, 'hooks')
     if (fs.existsSync(realHooksDir)) {
       try {
