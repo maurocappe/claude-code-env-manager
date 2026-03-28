@@ -38,15 +38,18 @@ export async function buildFakeHome(
   config: EnvConfig,
   envDir: string,
   realHome?: string,
+  opts?: { skipCredentials?: boolean },
 ): Promise<FakeHomeResult> {
   const home = realHome ?? os.homedir()
   const homePath = path.join(envDir, 'home')
   const claudeHome = path.join(homePath, '.claude')
   const realClaudeHome = path.join(home, '.claude')
 
-  // ── 1. Persistent directories (create if missing) ──────────────────────
+  // ── 1. Persistent directories (create if missing, restrictive perms) ────
+  fs.mkdirSync(homePath, { recursive: true, mode: 0o700 })
+  fs.mkdirSync(claudeHome, { recursive: true, mode: 0o700 })
   for (const sub of ['plugins/data', 'sessions', 'session-env']) {
-    fs.mkdirSync(path.join(claudeHome, sub), { recursive: true })
+    fs.mkdirSync(path.join(claudeHome, sub), { recursive: true, mode: 0o700 })
   }
 
   // ── 2. Shared symlinks (create once, skip if exists) ───────────────────
@@ -135,8 +138,10 @@ export async function buildFakeHome(
     { encoding: 'utf8', mode: 0o600 },
   )
 
-  // .credentials.json — passthrough current OAuth from keychain
-  await writeCredentialsFile(claudeHome)
+  // .credentials.json — passthrough current OAuth from keychain (skip in dry-run)
+  if (!opts?.skipCredentials) {
+    await writeCredentialsFile(claudeHome)
+  }
 
   return { homePath, claudeHome }
 }

@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { select, log, intro, cancel, isCancel } from '@clack/prompts'
@@ -16,7 +17,7 @@ interface RunOpts {
 
 /**
  * Core `cenv run` command.
- * Resolves env, checks trust, generates session files, and launches claude.
+ * Resolves env, checks trust, builds fake HOME, and launches claude.
  */
 export async function runRun(
   envNameOrPath?: string,
@@ -104,20 +105,21 @@ export async function runRun(
   const realHome = process.env.HOME ?? os.homedir()
   const claudeBin = findClaudeBinary(realHome)
 
-  // 6. Build fake HOME with curated config
-  const fakeHome = await buildFakeHome(resolved.config, resolved.path, realHome)
-
+  // 6. Dry run — preview without writing credentials or launching
   if (opts.dryRun) {
+    const fakeHome = await buildFakeHome(resolved.config, resolved.path, realHome, { skipCredentials: true })
     const displayHome = fakeHome.homePath.replace(process.env.HOME ?? '', '~')
     log.info(`Dry run — would execute:\n\n${pc.dim(`HOME=${displayHome} ${claudeBin} ${passThroughArgs.join(' ')}`.trim())}`)
     log.info(`Fake HOME: ${pc.dim(fakeHome.homePath)}`)
     log.info(`Claude HOME: ${pc.dim(fakeHome.claudeHome)}`)
+    // authEnvVars intentionally not displayed for security
     return
   }
 
-  // 7. Launch claude
-  // Ensure real ~/.local/bin stays in PATH — Claude checks $HOME/.local/bin
-  // which with fake HOME would resolve to a different string despite symlinking
+  // 7. Build fake HOME with curated config + credentials
+  const fakeHome = await buildFakeHome(resolved.config, resolved.path, realHome)
+
+  // 8. Launch claude
   const realLocalBin = path.join(realHome, '.local', 'bin')
   let patchedPath = process.env.PATH ?? ''
   if (!patchedPath.split(':').includes(realLocalBin)) {
@@ -125,12 +127,18 @@ export async function runRun(
   }
   const env = { ...process.env, HOME: fakeHome.homePath, PATH: patchedPath, ...authEnvVars }
   log.step('Launching claude...')
-  const proc = Bun.spawn([claudeBin, ...passThroughArgs], {
-    stdio: ['inherit', 'inherit', 'inherit'],
-    env,
-    cwd,
-  })
 
-  await proc.exited
-  process.exit(proc.exitCode ?? 0)
+  const credentialsPath = path.join(fakeHome.claudeHome, '.credentials.json')
+  try {
+    const proc = Bun.spawn([claudeBin, ...passThroughArgs], {
+      stdio: ['inherit', 'inherit', 'inherit'],
+      env,
+      cwd,
+    })
+    await proc.exited
+    process.exit(proc.exitCode ?? 0)
+  } finally {
+    // Clean up credentials file after Claude exits
+    try { fs.unlinkSync(credentialsPath) } catch {}
+  }
 }

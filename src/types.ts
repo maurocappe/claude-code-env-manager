@@ -75,13 +75,6 @@ export interface EnvEntry {
   source: 'personal' | 'project'
 }
 
-// ── Fake HOME ────────────────────────────────────────────────────────────────
-
-export interface FakeHomeResult {
-  homePath: string
-  claudeHome: string
-}
-
 // ── Scanner ───────────────────────────────────────────────────────────────────
 
 export interface InstalledPlugin {

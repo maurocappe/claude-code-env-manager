@@ -26,10 +26,4 @@ export const CLAUDE_INSTALLED_PLUGINS_PATH = path.join(
 export const KEYCHAIN_SERVICE_PREFIX = 'cenv-auth:'
 export const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 
-// ── Dotfile symlinks ─────────────────────────────────────────────────────────
-
-export const DOTFILE_SYMLINKS = [
-  '.gitconfig', '.ssh', '.config', '.local',
-  '.npmrc', '.bunfig.toml', '.claude.json',
-] as const
 
