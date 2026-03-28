@@ -88,6 +88,45 @@ export async function buildFakeHome(
   // skills/
   regenerateSkillSymlinks(claudeHome, config)
 
+  // Commands — symlink selected commands into fake .claude/commands/
+  if (config.commands?.length) {
+    const commandsDir = path.join(claudeHome, 'commands')
+    fs.mkdirSync(commandsDir, { recursive: true })
+    // Clear existing command symlinks
+    try {
+      for (const entry of fs.readdirSync(commandsDir)) {
+        const p = path.join(commandsDir, entry)
+        if (fs.lstatSync(p).isSymbolicLink()) fs.unlinkSync(p)
+      }
+    } catch { /* empty dir — fine */ }
+    // Create new symlinks
+    for (const cmd of config.commands) {
+      if (!cmd.path) continue
+      try {
+        const resolved = fs.realpathSync(cmd.path)
+        const name = path.basename(resolved)
+        safeSymlink(resolved, path.join(commandsDir, name))
+      } catch { /* skip missing commands */ }
+    }
+  }
+
+  // Hooks — symlink real hooks dir so hook scripts can find siblings
+  if (config.hooks && Object.keys(config.hooks).length > 0) {
+    const hooksDir = path.join(claudeHome, 'hooks')
+    fs.mkdirSync(hooksDir, { recursive: true })
+    const realHooksDir = path.join(realClaudeHome, 'hooks')
+    if (fs.existsSync(realHooksDir)) {
+      try {
+        for (const entry of fs.readdirSync(realHooksDir)) {
+          safeSymlink(
+            path.join(realHooksDir, entry),
+            path.join(hooksDir, entry)
+          )
+        }
+      } catch { /* ignore errors */ }
+    }
+  }
+
   // .mcp.json at fake HOME root
   const mcpConfig = await generateMcpConfig(config)
   fs.writeFileSync(
@@ -223,6 +262,11 @@ function generateSettings(config: EnvConfig): Record<string, unknown> {
     }
   }
   settings.enabledPlugins = enabledPlugins
+
+  // StatusLine — passthrough as-is
+  if (config.settings?.statusLine) {
+    settings.statusLine = config.settings.statusLine
+  }
 
   return settings
 }

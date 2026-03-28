@@ -329,6 +329,43 @@ describe('buildFakeHome — config regeneration', () => {
     ])
   })
 
+  test('generates settings.json with statusLine when configured', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('statusline')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = {
+      name: 'statusline',
+      settings: {
+        statusLine: {
+          'plugin:claude-hud': { enabled: true, refresh: 5 },
+        },
+      },
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const settingsPath = path.join(result.claudeHome, 'settings.json')
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+    expect(settings.statusLine).toEqual({
+      'plugin:claude-hud': { enabled: true, refresh: 5 },
+    })
+  })
+
+  test('omits statusLine from settings.json when not configured', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('no-statusline')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'no-statusline' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const settingsPath = path.join(result.claudeHome, 'settings.json')
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+    expect(settings.statusLine).toBeUndefined()
+  })
+
   test('generates installed_plugins.json with only selected plugins', async () => {
     const { envDir, cleanup: ec } = createTempEnvDir('plugins-filter')
     envCleanup = ec
@@ -559,6 +596,176 @@ describe('buildFakeHome — skill symlinks', () => {
 
     const skillsDir = path.join(result.claudeHome, 'skills')
     const entries = fs.readdirSync(skillsDir)
+    expect(entries).toHaveLength(0)
+  })
+})
+
+describe('buildFakeHome — command symlinks', () => {
+  let envCleanup: () => void
+  let homeCleanup: () => void
+
+  afterEach(() => {
+    envCleanup?.()
+    homeCleanup?.()
+  })
+
+  test('creates command symlinks for selected commands', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('cmds')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // Create a .md command file in the real HOME commands dir
+    const realCmdDir = path.join(realHome, '.claude', 'commands')
+    fs.mkdirSync(realCmdDir, { recursive: true })
+    const cmdFile = path.join(realCmdDir, 'deploy.md')
+    fs.writeFileSync(cmdFile, '# Deploy\nRun deploy script\n', 'utf8')
+
+    const config: EnvConfig = {
+      name: 'cmds',
+      commands: [{ path: cmdFile }],
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const commandsDir = path.join(result.claudeHome, 'commands')
+    const entries = fs.readdirSync(commandsDir)
+    expect(entries).toContain('deploy.md')
+
+    const cmdLink = path.join(commandsDir, 'deploy.md')
+    const stat = fs.lstatSync(cmdLink)
+    expect(stat.isSymbolicLink()).toBe(true)
+  })
+
+  test('skips commands with nonexistent paths', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('cmds-missing')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = {
+      name: 'cmds-missing',
+      commands: [{ path: '/nonexistent/cmd.md' }],
+    }
+
+    // Should not throw
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const commandsDir = path.join(result.claudeHome, 'commands')
+    // commands dir exists because config.commands has length
+    const entries = fs.readdirSync(commandsDir).filter(e =>
+      fs.lstatSync(path.join(commandsDir, e)).isSymbolicLink()
+    )
+    expect(entries).toHaveLength(0)
+  })
+
+  test('clears and recreates command symlinks on regeneration', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('cmds-regen')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const realCmdDir = path.join(realHome, '.claude', 'commands')
+    fs.mkdirSync(realCmdDir, { recursive: true })
+    const cmdA = path.join(realCmdDir, 'alpha.md')
+    const cmdB = path.join(realCmdDir, 'beta.md')
+    fs.writeFileSync(cmdA, '# Alpha\n', 'utf8')
+    fs.writeFileSync(cmdB, '# Beta\n', 'utf8')
+
+    // First build with alpha
+    const configA: EnvConfig = {
+      name: 'cmds-regen',
+      commands: [{ path: cmdA }],
+    }
+    const result = await buildFakeHome(configA, envDir, realHome)
+
+    let entries = fs.readdirSync(path.join(result.claudeHome, 'commands'))
+    expect(entries).toContain('alpha.md')
+    expect(entries).not.toContain('beta.md')
+
+    // Second build with beta only
+    const configB: EnvConfig = {
+      name: 'cmds-regen',
+      commands: [{ path: cmdB }],
+    }
+    await buildFakeHome(configB, envDir, realHome)
+
+    entries = fs.readdirSync(path.join(result.claudeHome, 'commands'))
+    expect(entries).toContain('beta.md')
+    expect(entries).not.toContain('alpha.md')
+  })
+})
+
+describe('buildFakeHome — hooks directory symlinks', () => {
+  let envCleanup: () => void
+  let homeCleanup: () => void
+
+  afterEach(() => {
+    envCleanup?.()
+    homeCleanup?.()
+  })
+
+  test('symlinks hooks directory when env has hooks', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('hooks-dir')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // Create a hook script in the real HOME hooks dir
+    const realHooksDir = path.join(realHome, '.claude', 'hooks')
+    fs.mkdirSync(realHooksDir, { recursive: true })
+    fs.writeFileSync(path.join(realHooksDir, 'notify.sh'), '#!/bin/sh\necho ok\n', 'utf8')
+
+    const config: EnvConfig = {
+      name: 'hooks-dir',
+      hooks: {
+        Stop: [{ command: '~/.claude/hooks/notify.sh' }],
+      },
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const hooksDir = path.join(result.claudeHome, 'hooks')
+    expect(fs.existsSync(hooksDir)).toBe(true)
+
+    const notifyLink = path.join(hooksDir, 'notify.sh')
+    const stat = fs.lstatSync(notifyLink)
+    expect(stat.isSymbolicLink()).toBe(true)
+    expect(fs.readlinkSync(notifyLink)).toBe(path.join(realHooksDir, 'notify.sh'))
+  })
+
+  test('does not create hooks dir when no hooks configured', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('no-hooks-dir')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = { name: 'no-hooks-dir' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const hooksDir = path.join(result.claudeHome, 'hooks')
+    expect(fs.existsSync(hooksDir)).toBe(false)
+  })
+
+  test('handles missing real hooks dir gracefully', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('hooks-no-real')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // No hooks dir created in real HOME — just hooks in config
+    const config: EnvConfig = {
+      name: 'hooks-no-real',
+      hooks: {
+        Stop: [{ command: 'echo done' }],
+      },
+    }
+
+    // Should not throw
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const hooksDir = path.join(result.claudeHome, 'hooks')
+    // The hooks dir is created but will be empty (no real hooks to symlink)
+    expect(fs.existsSync(hooksDir)).toBe(true)
+    const entries = fs.readdirSync(hooksDir)
     expect(entries).toHaveLength(0)
   })
 })
