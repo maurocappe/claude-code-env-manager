@@ -1,11 +1,12 @@
+import os from 'node:os'
 import { select, log, intro, cancel, isCancel } from '@clack/prompts'
 import pc from 'picocolors'
 import { CENV_HOME } from '../constants'
 import { resolveEnv, listAllEnvs } from '../lib/resolver'
 import { loadAuthProfile, listAuthProfiles, resolveAuthEnvVars } from '../lib/auth'
-import { createSession, cleanupStaleSessions } from '../lib/session'
+import { buildFakeHome } from '../lib/fake-home'
 import { isPersonalEnv, isAllowed } from '../lib/trust'
-import { assembleClaudeArgs, findClaudeBinary } from '../lib/runner'
+import { findClaudeBinary } from '../lib/runner'
 
 interface RunOpts {
   auth?: string | boolean
@@ -96,34 +97,26 @@ export async function runRun(
     authEnvVars = await resolveAuthEnvVars(profile, opts.auth)
   }
 
-  // 5. Clean stale sessions
-  cleanupStaleSessions()
+  // 5. Find claude binary (must happen BEFORE setting fake HOME)
+  const realHome = process.env.HOME ?? os.homedir()
+  const claudeBin = findClaudeBinary(realHome)
 
-  // 6. Generate session files
-  const session = await createSession(resolved.config, resolved.path)
-
-  // 7. Assemble claude CLI args
-  const claudeArgs = assembleClaudeArgs(session, resolved.config, passThroughArgs)
-
-  // 8. Find claude binary
-  const claudeBin = findClaudeBinary()
+  // 6. Build fake HOME with curated config
+  const fakeHome = await buildFakeHome(resolved.config, resolved.path, realHome)
 
   if (opts.dryRun) {
-    // Print the command instead of executing
-    const envStr = Object.entries(authEnvVars)
-      .map(([k, v]) => `${k}=${k.includes('KEY') || k.includes('TOKEN') ? '***' : v}`)
-      .join(' ')
-    const cmd = [envStr, claudeBin, ...claudeArgs].filter(Boolean).join(' \\\n  ')
-    log.info(`Dry run — would execute:\n\n${pc.dim(cmd)}`)
-    log.info(`Session dir: ${pc.dim(session.dir)}`)
+    const displayHome = fakeHome.homePath.replace(process.env.HOME ?? '', '~')
+    log.info(`Dry run — would execute:\n\n${pc.dim(`HOME=${displayHome} ${claudeBin} ${passThroughArgs.join(' ')}`.trim())}`)
+    log.info(`Fake HOME: ${pc.dim(fakeHome.homePath)}`)
+    log.info(`Claude HOME: ${pc.dim(fakeHome.claudeHome)}`)
     return
   }
 
-  // 9. Launch claude
+  // 7. Launch claude
   log.step(`Launching claude...`)
 
-  const env = { ...process.env, ...authEnvVars }
-  const proc = Bun.spawn([claudeBin, ...claudeArgs], {
+  const env = { ...process.env, HOME: fakeHome.homePath, ...authEnvVars }
+  const proc = Bun.spawn([claudeBin, ...passThroughArgs], {
     stdio: ['inherit', 'inherit', 'inherit'],
     env,
     cwd,

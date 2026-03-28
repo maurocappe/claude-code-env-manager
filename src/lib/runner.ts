@@ -1,53 +1,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { EnvConfig, SessionFiles } from '../types'
-
-/**
- * Assemble the claude CLI arguments from session files and env config.
- */
-export function assembleClaudeArgs(
-  session: SessionFiles,
-  config: EnvConfig,
-  passThroughArgs: string[] = []
-): string[] {
-  const args: string[] = []
-
-  // Settings
-  args.push('--settings', session.settingsPath)
-
-  // Plugin directories
-  for (const dir of session.pluginDirs) {
-    args.push('--plugin-dir', dir)
-  }
-
-  // MCP config
-  args.push('--mcp-config', session.mcpConfigPath)
-
-  // Claude.md — append to system prompt
-  if (session.claudeMdPath) {
-    args.push('--append-system-prompt-file', session.claudeMdPath)
-  }
-
-  // Disallowed tools — pass via CLI flags for enforcement
-  if (session.disallowedTools.length > 0) {
-    args.push('--disallowed-tools', ...session.disallowedTools)
-  }
-
-  // Pass-through args (everything after --)
-  if (passThroughArgs.length > 0) {
-    args.push(...passThroughArgs)
-  }
-
-  return args
-}
 
 /**
  * Find the claude binary path.
  */
-export function findClaudeBinary(): string {
+export function findClaudeBinary(realHome?: string): string {
+  const home = realHome ?? process.env.HOME ?? ''
+
   // Try known absolute paths first
   const absoluteCandidates = [
-    path.join(process.env.HOME ?? '', '.local', 'bin', 'claude'),
+    path.join(home, '.local', 'bin', 'claude'),
     '/usr/local/bin/claude',
   ]
 
