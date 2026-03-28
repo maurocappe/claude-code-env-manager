@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { parse, stringify } from 'yaml'
 import { validRange } from 'semver'
@@ -33,6 +34,9 @@ export function loadEnvConfig(envDir: string): EnvConfig {
     }
   }
 
+  // Validate skill and command paths
+  validatePaths(data)
+
   return data
 }
 
@@ -52,6 +56,47 @@ function validatePluginRef(plugin: PluginRef): void {
       throw new ConfigError(
         `env.yaml: plugin "${plugin.name}" has an invalid semver version range: "${plugin.version}"`
       )
+    }
+  }
+}
+
+function validatePaths(config: EnvConfig): void {
+  const home = os.homedir()
+  const allowedPrefixes = [
+    home + '/.claude/',      // user claude dir
+    home + '/.claude-envs/', // cenv dir
+    home + '/.agents/',      // agents dir (skills often symlinked here)
+  ]
+
+  function isAllowedPath(p: string): boolean {
+    // Relative paths starting with ./ or ../ are always allowed (project-local)
+    if (p.startsWith('./') || p.startsWith('../')) return true
+    // Absolute paths must be under allowed prefixes
+    for (const prefix of allowedPrefixes) {
+      if (p.startsWith(prefix)) return true
+    }
+    return false
+  }
+
+  if (config.skills) {
+    for (const skill of config.skills) {
+      if (skill.path && !isAllowedPath(skill.path)) {
+        throw new ConfigError(
+          `env.yaml: skill path "${skill.path}" is not under an allowed directory. ` +
+          `Paths must be relative (./) or under ~/.claude/, ~/.claude-envs/, or ~/.agents/`
+        )
+      }
+    }
+  }
+
+  if (config.commands) {
+    for (const cmd of config.commands) {
+      if (cmd.path && !isAllowedPath(cmd.path)) {
+        throw new ConfigError(
+          `env.yaml: command path "${cmd.path}" is not under an allowed directory. ` +
+          `Paths must be relative (./) or under ~/.claude/, ~/.claude-envs/, or ~/.agents/`
+        )
+      }
     }
   }
 }

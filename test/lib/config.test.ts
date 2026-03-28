@@ -142,6 +142,135 @@ plugins:
   })
 })
 
+// ── loadEnvConfig — path validation ───────────────────────────────────────────
+
+describe('loadEnvConfig — path validation', () => {
+  let cleanup: () => void
+
+  afterEach(() => cleanup?.())
+
+  test('allows skill paths under ~/.claude/', () => {
+    const tmp = createTempEnvDir(`
+name: path-test
+skills:
+  - name: my-skill
+    path: ${os.homedir()}/.claude/skills/foo
+`)
+    cleanup = tmp.cleanup
+
+    expect(() => loadEnvConfig(tmp.envDir)).not.toThrow()
+  })
+
+  test('allows relative skill paths starting with ./', () => {
+    const tmp = createTempEnvDir(`
+name: path-test
+skills:
+  - name: my-skill
+    path: ./skills/foo
+`)
+    cleanup = tmp.cleanup
+
+    expect(() => loadEnvConfig(tmp.envDir)).not.toThrow()
+  })
+
+  test('allows relative skill paths starting with ../', () => {
+    const tmp = createTempEnvDir(`
+name: path-test
+skills:
+  - name: my-skill
+    path: ../shared-skills/foo
+`)
+    cleanup = tmp.cleanup
+
+    expect(() => loadEnvConfig(tmp.envDir)).not.toThrow()
+  })
+
+  test('allows skill paths under ~/.claude-envs/', () => {
+    const tmp = createTempEnvDir(`
+name: path-test
+skills:
+  - name: my-skill
+    path: ${os.homedir()}/.claude-envs/some-env/skills/foo
+`)
+    cleanup = tmp.cleanup
+
+    expect(() => loadEnvConfig(tmp.envDir)).not.toThrow()
+  })
+
+  test('allows skill paths under ~/.agents/', () => {
+    const tmp = createTempEnvDir(`
+name: path-test
+skills:
+  - name: my-skill
+    path: ${os.homedir()}/.agents/my-agent
+`)
+    cleanup = tmp.cleanup
+
+    expect(() => loadEnvConfig(tmp.envDir)).not.toThrow()
+  })
+
+  test('rejects skill paths to system directories', () => {
+    const tmp = createTempEnvDir(`
+name: path-test
+skills:
+  - name: evil-skill
+    path: /etc/passwd
+`)
+    cleanup = tmp.cleanup
+
+    expect(() => loadEnvConfig(tmp.envDir)).toThrow(ConfigError)
+    expect(() => loadEnvConfig(tmp.envDir)).toThrow(/skill path/)
+    expect(() => loadEnvConfig(tmp.envDir)).toThrow(/not under an allowed directory/)
+  })
+
+  test('rejects command paths to system directories', () => {
+    const tmp = createTempEnvDir(`
+name: path-test
+commands:
+  - path: /etc/shadow
+`)
+    cleanup = tmp.cleanup
+
+    expect(() => loadEnvConfig(tmp.envDir)).toThrow(ConfigError)
+    expect(() => loadEnvConfig(tmp.envDir)).toThrow(/command path/)
+    expect(() => loadEnvConfig(tmp.envDir)).toThrow(/not under an allowed directory/)
+  })
+
+  test('allows command paths under ~/.claude-envs/', () => {
+    const tmp = createTempEnvDir(`
+name: path-test
+commands:
+  - path: ${os.homedir()}/.claude-envs/some-env/commands/foo
+`)
+    cleanup = tmp.cleanup
+
+    expect(() => loadEnvConfig(tmp.envDir)).not.toThrow()
+  })
+
+  test('allows command paths that are relative', () => {
+    const tmp = createTempEnvDir(`
+name: path-test
+commands:
+  - path: ./commands/foo
+`)
+    cleanup = tmp.cleanup
+
+    expect(() => loadEnvConfig(tmp.envDir)).not.toThrow()
+  })
+
+  test('skills without a path field are not validated', () => {
+    const tmp = createTempEnvDir(`
+name: path-test
+skills:
+  - name: remote-skill
+    source: github:user/repo
+`)
+    cleanup = tmp.cleanup
+
+    expect(() => loadEnvConfig(tmp.envDir)).not.toThrow()
+  })
+})
+
 // ── writeEnvConfig ─────────────────────────────────────────────────────────────
 
 describe('writeEnvConfig', () => {
