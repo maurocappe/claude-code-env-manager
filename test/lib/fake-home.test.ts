@@ -589,6 +589,120 @@ describe('buildFakeHome — config regeneration', () => {
   })
 })
 
+describe('buildFakeHome — .claude.json generation', () => {
+  let envCleanup: () => void
+  let homeCleanup: () => void
+
+  afterEach(() => {
+    envCleanup?.()
+    homeCleanup?.()
+  })
+
+  test('generates minimal .claude.json without projects key', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('claude-json-minimal')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // Create real .claude.json with projects, numStartups, and hasCompletedOnboarding
+    fs.writeFileSync(
+      path.join(realHome, '.claude.json'),
+      JSON.stringify({
+        numStartups: 42,
+        hasCompletedOnboarding: true,
+        projects: {
+          'abc123': {
+            mcpServers: { gmail: { command: 'gmail-mcp' } },
+            allowedTools: ['Bash'],
+          },
+        },
+      }, null, 2),
+      'utf8',
+    )
+
+    const config: EnvConfig = { name: 'claude-json-minimal' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const claudeJsonPath = path.join(result.homePath, '.claude.json')
+    expect(fs.existsSync(claudeJsonPath)).toBe(true)
+
+    const generated = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf8'))
+    expect(generated.numStartups).toBe(42)
+    expect(generated.hasCompletedOnboarding).toBe(true)
+    expect(generated.projects).toBeUndefined()
+  })
+
+  test('generates .claude.json without oauthAccount or anonymousId', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('claude-json-sensitive')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    fs.writeFileSync(
+      path.join(realHome, '.claude.json'),
+      JSON.stringify({
+        numStartups: 5,
+        hasCompletedOnboarding: true,
+        oauthAccount: { email: 'user@example.com', id: 'acct-123' },
+        anonymousId: 'anon-abc-123',
+        claudeAiMcpEverConnected: true,
+        githubRepoPaths: ['/home/user/repos/secret-project'],
+      }, null, 2),
+      'utf8',
+    )
+
+    const config: EnvConfig = { name: 'claude-json-sensitive' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const generated = JSON.parse(
+      fs.readFileSync(path.join(result.homePath, '.claude.json'), 'utf8'),
+    )
+    expect(generated.numStartups).toBe(5)
+    expect(generated.hasCompletedOnboarding).toBe(true)
+    expect(generated.oauthAccount).toBeUndefined()
+    expect(generated.anonymousId).toBeUndefined()
+    expect(generated.claudeAiMcpEverConnected).toBeUndefined()
+    expect(generated.githubRepoPaths).toBeUndefined()
+  })
+
+  test('handles missing .claude.json gracefully', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('claude-json-missing')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // Do NOT create .claude.json in real home
+
+    const config: EnvConfig = { name: 'claude-json-missing' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    // Should not crash, and .claude.json should not exist in fake home
+    const claudeJsonPath = path.join(result.homePath, '.claude.json')
+    expect(fs.existsSync(claudeJsonPath)).toBe(false)
+  })
+
+  test('.claude.json is a generated file, not a symlink', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('claude-json-not-symlink')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    fs.writeFileSync(
+      path.join(realHome, '.claude.json'),
+      JSON.stringify({ numStartups: 1 }),
+      'utf8',
+    )
+
+    const config: EnvConfig = { name: 'claude-json-not-symlink' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const claudeJsonPath = path.join(result.homePath, '.claude.json')
+    const stat = fs.lstatSync(claudeJsonPath)
+    expect(stat.isSymbolicLink()).toBe(false)
+    expect(stat.isFile()).toBe(true)
+  })
+})
+
 describe('buildFakeHome — skill symlinks', () => {
   let envCleanup: () => void
   let homeCleanup: () => void

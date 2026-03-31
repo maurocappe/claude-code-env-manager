@@ -25,7 +25,6 @@ const DOTFILE_SYMLINKS = [
   '.local',
   '.npmrc',
   '.bunfig.toml',
-  '.claude.json',  // Claude Code app state (startup count, theme, tips) — prevents first-run wizard
 ] as const
 
 // ── Keychain validation ─────────────────────────────────────────────────────
@@ -160,12 +159,54 @@ export async function buildFakeHome(
     { encoding: 'utf8', mode: 0o600 },
   )
 
+  // .claude.json — minimal version (strips projects/MCP data to prevent leaks)
+  generateClaudeJson(homePath, home)
+
   // .credentials.json — passthrough current OAuth from keychain (skip in dry-run)
   if (!opts?.skipCredentials) {
     await writeCredentialsFile(claudeHome)
   }
 
   return { homePath, claudeHome }
+}
+
+// ── Minimal .claude.json generation ─────────────────────────────────────────
+
+/**
+ * Generate a minimal .claude.json at the fake HOME root.
+ * Copies onboarding/state fields from the real file to prevent the first-run
+ * wizard, but strips the `projects` key which contains per-project MCP servers
+ * and other data that should not leak across environments.
+ */
+function generateClaudeJson(homePath: string, realHome: string): void {
+  const realPath = path.join(realHome, '.claude.json')
+  const fakePath = path.join(homePath, '.claude.json')
+
+  try {
+    if (!fs.existsSync(realPath)) return
+
+    const real = JSON.parse(fs.readFileSync(realPath, 'utf8'))
+
+    // Strip keys that contain per-project or sensitive data
+    const STRIP_KEYS = [
+      'projects',              // per-project MCP servers, allowedTools, etc.
+      'claudeAiMcpEverConnected', // remote MCP connection state
+      'oauthAccount',          // account details (handled via .credentials.json)
+      'anonymousId',           // telemetry ID
+      'githubRepoPaths',       // repo path history
+    ]
+
+    const minimal: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(real)) {
+      if (!STRIP_KEYS.includes(key)) {
+        minimal[key] = value
+      }
+    }
+
+    fs.writeFileSync(fakePath, JSON.stringify(minimal, null, 2), { encoding: 'utf8', mode: 0o600 })
+  } catch {
+    // Failed to read/write — Claude will show first-run wizard (acceptable fallback)
+  }
 }
 
 // ── Credentials passthrough ──────────────────────────────────────────────────
