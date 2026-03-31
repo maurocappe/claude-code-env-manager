@@ -204,6 +204,26 @@ describe('buildFakeHome — shared symlinks', () => {
     expect(fs.readlinkSync(projectsLink)).toBe(path.join(realHome, '.claude', 'projects'))
   })
 
+  test('creates plugins/marketplaces symlink to real HOME', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('mkt-sym')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // Create marketplaces dir in the fake real home
+    const marketplacesDir = path.join(realHome, '.claude', 'plugins', 'marketplaces')
+    fs.mkdirSync(marketplacesDir, { recursive: true })
+    fs.writeFileSync(path.join(marketplacesDir, 'repo.json'), '{}', 'utf8')
+
+    const config: EnvConfig = { name: 'mkt-sym' }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const mktLink = path.join(result.claudeHome, 'plugins', 'marketplaces')
+    const stat = fs.lstatSync(mktLink)
+    expect(stat.isSymbolicLink()).toBe(true)
+    expect(fs.readlinkSync(mktLink)).toBe(marketplacesDir)
+  })
+
   test('does not create commands symlink (commands not shared)', async () => {
     const { envDir, cleanup: ec } = createTempEnvDir('cmd-sym')
     envCleanup = ec

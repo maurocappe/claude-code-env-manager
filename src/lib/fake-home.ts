@@ -259,6 +259,11 @@ function createSharedSymlinks(claudeHome: string, realClaudeHome: string): void 
       link: path.join(claudeHome, 'plugins', 'blocklist.json'),
       target: path.join(realClaudeHome, 'plugins', 'blocklist.json'),
     },
+    // Marketplace repos — needed for plugin sync
+    {
+      link: path.join(claudeHome, 'plugins', 'marketplaces'),
+      target: path.join(realClaudeHome, 'plugins', 'marketplaces'),
+    },
     // Projects & commands — shared memory across envs
     {
       link: path.join(claudeHome, 'projects'),
