@@ -99,6 +99,17 @@ function validatePaths(config: EnvConfig): void {
       }
     }
   }
+
+  if (config.rules) {
+    for (const rule of config.rules) {
+      if (rule.path && !isAllowedPath(rule.path)) {
+        throw new ConfigError(
+          `env.yaml: rule path "${rule.path}" is not under an allowed directory. ` +
+          `Paths must be relative (./) or under ~/.claude/, ~/.claude-envs/, or ~/.agents/`
+        )
+      }
+    }
+  }
 }
 
 /**

@@ -9,6 +9,7 @@ export interface EnvConfig {
   }
   skills?: SkillRef[]
   commands?: CommandRef[]
+  rules?: RuleRef[]
   mcp_servers?: Record<string, McpServerConfig>
   hooks?: Record<string, HookConfig[]>
   settings?: SettingsConfig
@@ -28,6 +29,10 @@ export interface SkillRef {
 }
 
 export interface CommandRef {
+  path: string
+}
+
+export interface RuleRef {
   path: string
 }
 

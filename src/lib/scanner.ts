@@ -312,6 +312,44 @@ export function scanStatusLine(
   return settings.statusLine as Record<string, unknown>
 }
 
+// ── Installed rules ──────────────────────────────────────────────────────────
+
+/**
+ * Scan `~/.claude/rules/` for markdown rule files.
+ * Rules are .md files (can be nested in subdirectories).
+ *
+ * @param rulesDir Override for the rules directory path (for testing)
+ */
+export function scanInstalledRules(
+  rulesDir: string = path.join(CLAUDE_HOME, 'rules')
+): Array<{ name: string; path: string }> {
+  if (!fs.existsSync(rulesDir)) return []
+
+  const results: Array<{ name: string; path: string }> = []
+
+  function walk(dir: string, prefix: string = '') {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(fullPath, prefix ? `${prefix}/${entry.name}` : entry.name)
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        const name = prefix ? `${prefix}/${entry.name}` : entry.name
+        results.push({ name, path: fullPath })
+      }
+    }
+  }
+
+  walk(rulesDir)
+  return results
+}
+
 // ── Installed commands ────────────────────────────────────────────────────────
 
 /**

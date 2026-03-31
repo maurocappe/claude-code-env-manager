@@ -10,6 +10,7 @@ import {
   scanCurrentHooks,
   scanStatusLine,
   scanInstalledCommands,
+  scanInstalledRules,
 } from '@/lib/scanner'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -704,5 +705,77 @@ Steps to deploy...`
     const result = scanInstalledCommands(cmdsDir)
     expect(result).toHaveLength(1)
     expect(result[0].name).toBe('real')
+  })
+})
+
+// ── scanInstalledRules ───────────────────────────────────────────────────────
+
+describe('scanInstalledRules', () => {
+  let cleanup: () => void
+
+  afterEach(() => cleanup?.())
+
+  test('finds .md files in rules directory', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const rulesDir = path.join(dir, 'rules')
+    fs.mkdirSync(rulesDir)
+
+    fs.writeFileSync(path.join(rulesDir, 'security.md'), '# Security rules\n', 'utf8')
+    fs.writeFileSync(path.join(rulesDir, 'coding.md'), '# Coding rules\n', 'utf8')
+
+    const result = scanInstalledRules(rulesDir)
+    expect(result).toHaveLength(2)
+
+    const names = result.map((r) => r.name)
+    expect(names).toContain('security.md')
+    expect(names).toContain('coding.md')
+
+    const security = result.find((r) => r.name === 'security.md')
+    expect(security?.path).toBe(path.join(rulesDir, 'security.md'))
+  })
+
+  test('finds nested .md files in subdirectories', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const rulesDir = path.join(dir, 'rules')
+    fs.mkdirSync(path.join(rulesDir, 'security'), { recursive: true })
+    fs.mkdirSync(path.join(rulesDir, 'style'), { recursive: true })
+
+    fs.writeFileSync(path.join(rulesDir, 'security', 'auth.md'), '# Auth rules\n', 'utf8')
+    fs.writeFileSync(path.join(rulesDir, 'style', 'formatting.md'), '# Formatting\n', 'utf8')
+    fs.writeFileSync(path.join(rulesDir, 'top-level.md'), '# Top level\n', 'utf8')
+
+    const result = scanInstalledRules(rulesDir)
+    expect(result).toHaveLength(3)
+
+    const names = result.map((r) => r.name)
+    expect(names).toContain('security/auth.md')
+    expect(names).toContain('style/formatting.md')
+    expect(names).toContain('top-level.md')
+
+    const nested = result.find((r) => r.name === 'security/auth.md')
+    expect(nested?.path).toBe(path.join(rulesDir, 'security', 'auth.md'))
+  })
+
+  test('returns empty when directory missing', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    expect(scanInstalledRules(path.join(dir, 'nonexistent'))).toEqual([])
+  })
+
+  test('ignores non-.md files', () => {
+    const { dir, cleanup: c } = makeTempDir()
+    cleanup = c
+    const rulesDir = path.join(dir, 'rules')
+    fs.mkdirSync(rulesDir)
+
+    fs.writeFileSync(path.join(rulesDir, 'readme.txt'), 'not a rule', 'utf8')
+    fs.writeFileSync(path.join(rulesDir, 'script.sh'), '#!/bin/bash', 'utf8')
+    fs.writeFileSync(path.join(rulesDir, 'valid.md'), '# Valid rule', 'utf8')
+
+    const result = scanInstalledRules(rulesDir)
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('valid.md')
   })
 })

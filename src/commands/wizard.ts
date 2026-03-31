@@ -22,9 +22,10 @@ import {
   scanCurrentHooks,
   scanStatusLine,
   scanInstalledCommands,
+  scanInstalledRules,
 } from '../lib/scanner'
 import { validRange } from 'semver'
-import type { EnvConfig, InstalledPlugin, McpServerConfig, PluginRef, HookConfig, CommandRef } from '../types'
+import type { EnvConfig, InstalledPlugin, McpServerConfig, PluginRef, HookConfig, CommandRef, RuleRef } from '../types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,8 @@ export interface WizardPaths {
   skillLockPath?: string
   /** Override for ~/.claude/commands/ directory (testing) */
   commandsDir?: string
+  /** Override for ~/.claude/rules/ directory (testing) */
+  rulesDir?: string
 }
 
 /**
@@ -91,13 +94,14 @@ export interface WizardPaths {
  *  2. Plugins (with optional per-plugin skill cherry-pick)
  *  3. Standalone skills
  *  4. Commands
- *  5. MCP servers
- *  6. Hooks
- *  7. StatusLine
- *  8. Settings (import permissions?, effort level)
- *  9. CLAUDE.md source (current / empty)
- * 10. Write files
- * 11. Outro summary
+ *  5. Rules
+ *  6. MCP servers
+ *  7. Hooks
+ *  8. StatusLine
+ *  9. Settings (import permissions?, effort level)
+ * 10. CLAUDE.md source (current / empty)
+ * 11. Write files
+ * 12. Outro summary
  */
 export async function runWizard(
   name: string,
@@ -249,7 +253,28 @@ export async function runWizard(
     selectedCommandPaths.push(...(chosen as string[]))
   }
 
-  // ── 5. MCP Servers ──────────────────────────────────────────────────────────
+  // ── 5. Rules ───────────────────────────────────────────────────────────────
+
+  const allRules = scanInstalledRules(paths.rulesDir)
+  const selectedRulePaths: string[] = []
+
+  if (allRules.length > 0) {
+    const ruleOptions = allRules.map((r) => ({
+      value: r.path,
+      label: pc.bold(r.name),
+    }))
+
+    const chosen = await multiselect({
+      message: 'Select rules to include:',
+      options: ruleOptions,
+      required: false,
+    })
+    abortOnCancel(chosen)
+
+    selectedRulePaths.push(...(chosen as string[]))
+  }
+
+  // ── 6. MCP Servers ──────────────────────────────────────────────────────────
 
   const allMcpServers = collectMcpServers(settingsPath)
 
@@ -297,7 +322,7 @@ export async function runWizard(
     }
   }
 
-  // ── 6. Hooks ────────────────────────────────────────────────────────────────
+  // ── 7. Hooks ────────────────────────────────────────────────────────────────
 
   const currentHooks = scanCurrentHooks(paths.settingsPath)
   let selectedHooks: Record<string, HookConfig[]> | undefined
@@ -315,7 +340,7 @@ export async function runWizard(
     }
   }
 
-  // ── 7. StatusLine ──────────────────────────────────────────────────────────
+  // ── 8. StatusLine ──────────────────────────────────────────────────────────
 
   const currentStatusLine = scanStatusLine(paths.settingsPath)
   let selectedStatusLine: Record<string, unknown> | undefined
@@ -332,7 +357,7 @@ export async function runWizard(
     }
   }
 
-  // ── 8. Settings ─────────────────────────────────────────────────────────────
+  // ── 9. Settings ─────────────────────────────────────────────────────────────
 
   const importPerms = await confirm({
     message: 'Import current permissions from settings.json?',
@@ -367,7 +392,7 @@ export async function runWizard(
     }
   }
 
-  // ── 9. CLAUDE.md source ────────────────────────────────────────────────────
+  // ── 10. CLAUDE.md source ───────────────────────────────────────────────────
 
   const claudeMdChoice = await select({
     message: 'CLAUDE.md source:',
@@ -379,7 +404,7 @@ export async function runWizard(
   })
   abortOnCancel(claudeMdChoice)
 
-  // ── 10. Generate files ───────────────────────────────────────────────────────
+  // ── 11. Generate files ──────────────────────────────────────────────────────
 
   fs.mkdirSync(envDir, { recursive: true })
 
@@ -404,6 +429,10 @@ export async function runWizard(
 
   if (selectedCommandPaths.length > 0) {
     config.commands = selectedCommandPaths.map((p) => ({ path: p }))
+  }
+
+  if (selectedRulePaths.length > 0) {
+    config.rules = selectedRulePaths.map((p) => ({ path: p }))
   }
 
   if (Object.keys(selectedMcpServers).length > 0) {
@@ -435,16 +464,17 @@ export async function runWizard(
     fs.writeFileSync(destMd, `# Claude Code instructions for ${name}\n`, 'utf8')
   }
 
-  // ── 11. Outro summary ───────────────────────────────────────────────────────
+  // ── 12. Outro summary ──────────────────────────────────────────────────────
 
   const displayPath = envDir.replace(process.env.HOME ?? '', '~')
   const pluginCount = selectedPluginRefs.length
   const skillCount = selectedStandaloneSkillPaths.length
   const commandCount = selectedCommandPaths.length
+  const ruleCount = selectedRulePaths.length
   const mcpCount = Object.keys(selectedMcpServers).length
 
   outro(
     `${pc.green('✓')} Created ${pc.cyan(pc.bold(name))} at ${pc.dim(displayPath)}\n` +
-    `  ${pc.dim(`${pluginCount} plugin(s), ${skillCount} standalone skill(s), ${commandCount} command(s), ${mcpCount} MCP server(s)`)}`
+    `  ${pc.dim(`${pluginCount} plugin(s), ${skillCount} standalone skill(s), ${commandCount} command(s), ${ruleCount} rule(s), ${mcpCount} MCP server(s)`)}`
   )
 }

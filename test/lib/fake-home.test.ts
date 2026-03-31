@@ -906,6 +906,64 @@ describe('buildFakeHome — command symlinks', () => {
   })
 })
 
+describe('buildFakeHome — rule symlinks', () => {
+  let envCleanup: () => void
+  let homeCleanup: () => void
+
+  afterEach(() => {
+    envCleanup?.()
+    homeCleanup?.()
+  })
+
+  test('creates rule symlinks for selected rules', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('rules')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    // Create rule files in the real HOME rules dir
+    const realRulesDir = path.join(realHome, '.claude', 'rules')
+    fs.mkdirSync(realRulesDir, { recursive: true })
+    const ruleFile = path.join(realRulesDir, 'security.md')
+    fs.writeFileSync(ruleFile, '# Security rules\n', 'utf8')
+
+    const config: EnvConfig = {
+      name: 'rules',
+      rules: [{ path: ruleFile }],
+    }
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const rulesDir = path.join(result.claudeHome, 'rules')
+    const entries = fs.readdirSync(rulesDir)
+    expect(entries).toContain('security.md')
+
+    const ruleLink = path.join(rulesDir, 'security.md')
+    const stat = fs.lstatSync(ruleLink)
+    expect(stat.isSymbolicLink()).toBe(true)
+  })
+
+  test('skips rules with nonexistent paths', async () => {
+    const { envDir, cleanup: ec } = createTempEnvDir('rules-missing')
+    envCleanup = ec
+    const { realHome, cleanup: hc } = createFakeRealHome()
+    homeCleanup = hc
+
+    const config: EnvConfig = {
+      name: 'rules-missing',
+      rules: [{ path: '/nonexistent/rule.md' }],
+    }
+
+    // Should not throw
+    const result = await buildFakeHome(config, envDir, realHome)
+
+    const rulesDir = path.join(result.claudeHome, 'rules')
+    const entries = fs.readdirSync(rulesDir).filter(e =>
+      fs.lstatSync(path.join(rulesDir, e)).isSymbolicLink()
+    )
+    expect(entries).toHaveLength(0)
+  })
+})
+
 describe('buildFakeHome — hooks directory symlinks', () => {
   let envCleanup: () => void
   let homeCleanup: () => void

@@ -126,6 +126,28 @@ export async function buildFakeHome(
     }
   }
 
+  // Rules — symlink selected rules into fake .claude/rules/
+  if (config.rules?.length) {
+    const rulesDir = path.join(claudeHome, 'rules')
+    fs.mkdirSync(rulesDir, { recursive: true })
+    // Clear existing symlinks
+    try {
+      for (const entry of fs.readdirSync(rulesDir)) {
+        const p = path.join(rulesDir, entry)
+        if (fs.lstatSync(p).isSymbolicLink()) fs.unlinkSync(p)
+      }
+    } catch { /* empty dir — fine */ }
+    // Create new symlinks
+    for (const rule of config.rules) {
+      if (!rule.path) continue
+      try {
+        const resolved = fs.realpathSync(rule.path)
+        const name = path.basename(resolved)
+        safeSymlink(resolved, path.join(rulesDir, name))
+      } catch { /* skip missing rules */ }
+    }
+  }
+
   // Hooks — symlink real hooks dir so hook scripts can find siblings
   if (config.hooks && Object.keys(config.hooks).length > 0) {
     const hooksDir = path.join(claudeHome, 'hooks')
