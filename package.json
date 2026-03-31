@@ -1,19 +1,42 @@
 {
-  "name": "claude-code-env-manager",
-  "version": "0.1.0",
+  "name": "@mcappe/cenv",
+  "version": "0.1.1",
   "description": "Define, compose, share, and launch Claude Code with specific environments",
   "bin": {
     "cenv": "./dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun build src/index.ts --outdir dist --target bun && printf '#!/usr/bin/env bun\\n' | cat - dist/index.js > dist/index.tmp && mv dist/index.tmp dist/index.js && chmod +x dist/index.js",
+    "prepublishOnly": "bun run build",
     "compile": "bun build src/index.ts --compile --outfile cenv",
     "test": "bun test",
     "test:e2e": "bun test test/e2e/",
     "test:unit": "bun test test/lib/ test/commands/ test/setup.test.ts",
     "typecheck": "tsc --noEmit",
     "check": "oxlint src"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "environment",
+    "manager",
+    "cli",
+    "plugins",
+    "skills",
+    "mcp"
+  ],
+  "author": "Mauro Cappelloni",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maurocappe/claude-code-env-manager"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
   },
   "dependencies": {
     "@clack/prompts": "^0.9.1",
